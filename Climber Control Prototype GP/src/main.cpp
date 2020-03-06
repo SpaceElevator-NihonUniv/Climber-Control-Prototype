@@ -59,6 +59,7 @@ uint8_t getBatteryGauge(void);
 void IRAM_ATTR onTimer(void);
 void timerInterrupt(void);
 void initEncoder(void);
+void initPSRAM(void);
 void buttonAction(void);
 void lcdDisplay(void);
 
@@ -74,6 +75,8 @@ void setup() {
   timerAlarmEnable(timer); 
 
   initEncoder();
+  initPSRAM();
+
   M5.Lcd.setTextSize(2);
 
   esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
