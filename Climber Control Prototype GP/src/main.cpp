@@ -17,7 +17,7 @@
 
 //Define
 //------------------------------------------------------------------//
-#define TIMER_INTERRUPT 10                  // Timer Interrupt Period
+#define TIMER_INTERRUPT 15                  // Timer Interrupt Period
 
 #define ESC_LDEC_CHANNEL 3                  // 50Hz LDEC Timer
 
