@@ -55,6 +55,14 @@ unsigned char pattern = 0;
 unsigned char pattern_buff;
 unsigned int  time_buff;
 
+
+int err;
+int err_buff;
+unsigned char kp = 10;
+unsigned char kd = 0;
+
+
+
 // MPU
 float accX = 0.0F;
 float accY = 0.0F;
@@ -83,6 +91,7 @@ void timerInterrupt(void);
 void initEncoder(void);
 void buttonAction(void);
 void lcdDisplay(void);
+void velocityControl(int object_count);
 
 //Setup
 //------------------------------------------------------------------//
@@ -126,6 +135,7 @@ void loop() {
 
   case 11:
     lcdDisplay();
+    velocityControl(100);
     esc.write(power);
     if( total_count >= 300000 || total_count <= -300000 ) {
       power = 0;
@@ -224,6 +234,18 @@ void timerInterrupt(void) {
     }
   }
 }
+
+//------------------------------------------------------------------//
+
+void velocityControl(int object_count) {
+  int i, j;
+  err = object_count - delta_count;
+  i = err * kp;
+  j = (err_buff - err)*kd;
+  power = (i + j)/10;
+  err_buff = err;
+}
+
 
 // Initialize Encoder
 //------------------------------------------------------------------//
