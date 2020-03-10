@@ -241,8 +241,8 @@ void velocityControl(int object_count) {
   int i, j;
   err = object_count - delta_count;
   i = err * kp;
-  j = (err_buff - err)*kd;
-  power = (i + j)/10;
+  j = (err - err_buff)*kd;
+  power = (i - j)/10;
   err_buff = err;
 }
 
