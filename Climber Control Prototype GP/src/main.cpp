@@ -47,8 +47,8 @@ long    total_count_buff;
 // ESC
 static const int escPin = 26;
 Servo esc;
-unsigned char power = 0;
-unsigned char power_buff;
+int power = 0;
+int power_buff;
 
 // Main
 unsigned char pattern = 0;
@@ -58,8 +58,9 @@ unsigned int  time_buff;
 
 int err;
 int err_buff;
-unsigned char kp = 10;
-unsigned char kd = 0;
+int err_buff2;
+unsigned char kp = 1;
+unsigned char kd = 1;
 
 
 
@@ -114,8 +115,9 @@ void setup() {
 
   // Initialize MPU
   M5.IMU.Init();
+  Serial.begin(115200);
 
-  esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
+  esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1600);
   esc.write(0);
 
 }
@@ -135,7 +137,7 @@ void loop() {
 
   case 11:
     lcdDisplay();
-    velocityControl(100);
+    velocityControl(-70);
     esc.write(power);
     if( total_count >= 300000 || total_count <= -300000 ) {
       power = 0;
@@ -152,6 +154,7 @@ void loop() {
 
   case 12:
     lcdDisplay();
+    velocityControl(-70);    
     esc.write(power);
     if( total_count >= 300000 || total_count <= -300000 ) {
       power = 0;
@@ -210,7 +213,7 @@ void timerInterrupt(void) {
     iTimer10++;
     switch (iTimer10) {
     case 1:
-      if(pattern == 11 && (power < 100)) power++;
+      //if(pattern == 11 && (power < 100)) power++;
       break;
     case 2:
       break;
@@ -239,11 +242,22 @@ void timerInterrupt(void) {
 
 void velocityControl(int object_count) {
   int i, j;
-  err = object_count - delta_count;
+  err = delta_count - object_count;
   i = err * kp;
-  j = (err - err_buff)*kd;
-  power = (i - j)/10;
+  j = (err_buff - err)*kd;
+  power = (i - j)/3;
+  
+  Serial.print(err);
+  Serial.print(", ");
+  Serial.print(power);
+  Serial.print(", ");
+  Serial.print(i);
+  Serial.print(", ");
+  Serial.print(j);
+  Serial.print("\n ");  
   err_buff = err;
+  if(power>100) power = 100;
+  if(power<-100) power = -100;
 }
 
 
@@ -300,7 +314,7 @@ void lcdDisplay(void) {
   M5.Lcd.setCursor(10, 160);
   M5.Lcd.printf("ROLL: %3.1f", roll_buff);
   M5.Lcd.setCursor(10, 190);
-  M5.Lcd.printf("YAW: %3.1f", yaw_buff);
+  M5.Lcd.printf("ERR: %3d", err_buff2);
 
 
   // Refresh Display
@@ -318,7 +332,7 @@ void lcdDisplay(void) {
   M5.Lcd.setCursor(10, 160);
   M5.Lcd.printf("ROLL: %3.1f", roll);
   M5.Lcd.setCursor(10, 190);
-  M5.Lcd.printf("YAW: %3.1f", yaw);
+  M5.Lcd.printf("ERR: %3d", err);
 
 
   // Load Buffer
@@ -329,6 +343,7 @@ void lcdDisplay(void) {
   pitch_buff = pitch;
   roll_buff = roll;
   yaw_buff = yaw;
+  err_buff2 = err;
 
 }
 
