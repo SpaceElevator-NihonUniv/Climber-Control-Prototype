@@ -7,7 +7,9 @@
 
 //This program supports the following boards:
 //* M5Stack(Grey version)
- 
+
+#define M5STACK_MPU6886 
+
 //Include
 //------------------------------------------------------------------//
 #include <M5Stack.h>
@@ -17,7 +19,7 @@
 
 //Define
 //------------------------------------------------------------------//
-#define TIMER_INTERRUPT 10                  // Timer Interrupt Period
+#define TIMER_INTERRUPT 100                  // Timer Interrupt Period
 
 #define ESC_LDEC_CHANNEL 3                  // 50Hz LDEC Timer
 
@@ -51,6 +53,26 @@ unsigned char power_buff;
 // Main
 unsigned char pattern = 0;
 unsigned char pattern_buff;
+unsigned int  time_buff;
+
+// MPU
+float accX = 0.0F;
+float accY = 0.0F;
+float accZ = 0.0F;
+
+float gyroX = 0.0F;
+float gyroY = 0.0F;
+float gyroZ = 0.0F;
+
+float pitch = 0.0F;
+float roll  = 0.0F;
+float yaw   = 0.0F;
+
+float temp = 0.0F;
+
+float pitch_buff;
+float roll_buff;
+float yaw_buff;
 
 
 //Prototype
@@ -77,6 +99,13 @@ void setup() {
 
   M5.Lcd.setTextSize(2);
 
+  // Initialize IIC
+  Wire.begin();
+  Wire.setClock(400000);
+
+  // Initialize MPU
+  M5.IMU.Init();
+
   esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
   esc.write(0);
 
@@ -98,13 +127,53 @@ void loop() {
   case 11:
     lcdDisplay();
     esc.write(power);
-    if( total_count >= 100000 || total_count <= -100000 ) {
+    if( total_count >= 300000 || total_count <= -300000 ) {
       power = 0;
-      total_count = 0;    
+      total_count = 0; 
+      time_buff = millis();   
+      pattern = 13;
+      break;
+    } 
+    if( power >= 100 ) {
+      pattern = 12;
+      break;
+    }    
+    break;
+
+  case 12:
+    lcdDisplay();
+    esc.write(power);
+    if( total_count >= 300000 || total_count <= -300000 ) {
+      power = 0;
+      total_count = 0; 
+      time_buff = millis();   
+      pattern = 14;
+      break;
+    }
+    break;
+
+  case 13:
+    lcdDisplay();
+    power = 0;
+    esc.write(power);
+    if( millis() - time_buff >= 5000 ) {
       pattern = 0;
       break;
     }
     break;
+
+case 14:
+    lcdDisplay();
+    power = 0;
+    esc.write(power);                          
+    if( millis() - time_buff >= 5000 ) {
+      pattern = 0;
+      break;
+    }
+    break;
+
+
+
 
   }
    
@@ -122,6 +191,11 @@ void timerInterrupt(void) {
     pcnt_get_counter_value(PCNT_UNIT_0, &delta_count);
     pcnt_counter_clear(PCNT_UNIT_0);  
     total_count += delta_count;
+
+    M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
+    M5.IMU.getAccelData(&accX,&accY,&accZ);
+    M5.IMU.getAhrsData(&pitch,&roll,&yaw);
+    M5.IMU.getTempData(&temp);
     
     iTimer10++;
     switch (iTimer10) {
@@ -199,9 +273,16 @@ void lcdDisplay(void) {
   M5.Lcd.printf("Total Counter: %6d", total_count_buff); 
   M5.Lcd.setCursor(10, 100);
   M5.Lcd.printf("Motor Power: %3d", power_buff); 
+  M5.Lcd.setCursor(10, 130);
+  M5.Lcd.printf("PITCH: %3.1f", pitch_buff);
+  M5.Lcd.setCursor(10, 160);
+  M5.Lcd.printf("ROLL: %3.1f", roll_buff);
+  M5.Lcd.setCursor(10, 190);
+  M5.Lcd.printf("YAW: %3.1f", yaw_buff);
+
 
   // Refresh Display
-  M5.Lcd.setTextColor(WHITE);
+  M5.Lcd.setTextColor(CYAN);
   M5.Lcd.setCursor(10, 10);
   M5.Lcd.printf("Pattern: %3d", pattern);  
   M5.Lcd.setCursor(10, 40);
@@ -210,12 +291,22 @@ void lcdDisplay(void) {
   M5.Lcd.printf("Total Counter: %6d", total_count); 
   M5.Lcd.setCursor(10, 100);
   M5.Lcd.printf("Motor Power: %3d", power); 
+  M5.Lcd.setCursor(10, 130);
+  M5.Lcd.printf("PITCH: %3.1f", pitch);
+  M5.Lcd.setCursor(10, 160);
+  M5.Lcd.printf("ROLL: %3.1f", roll);
+  M5.Lcd.setCursor(10, 190);
+  M5.Lcd.printf("YAW: %3.1f", yaw);
+
 
   // Load Buffer
   pattern_buff = pattern;
   delta_count_buff = delta_count;
   total_count_buff = total_count;
   power_buff = power;
+  pitch_buff = pitch;
+  roll_buff = roll;
+  yaw_buff = yaw;
 
 }
 
