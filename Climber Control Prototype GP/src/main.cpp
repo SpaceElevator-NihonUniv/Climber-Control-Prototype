@@ -54,6 +54,7 @@ int power_buff;
 unsigned char pattern = 0;
 unsigned char pattern_buff;
 unsigned int  time_buff;
+unsigned int  micros_time;
 
 
 char motor_output;
@@ -211,14 +212,15 @@ void timerInterrupt(void) {
     case 1:
       if(pattern == 11 && (power < 100)) power++;
       break;
-    case 2:
-      Serial2.printf("%3d,",millis()/1700);
+    case 2:      
+      Serial2.printf("%3d,",millis()/1000);
       Serial2.printf("%3d,",pattern);
       Serial2.printf("%3d,",motor_output);
       Serial2.printf("%3.1f,",climber_altitude);
       Serial2.printf("%2.2f,",climber_velocity);
       Serial2.printf("%2.2f,",slip_rate);
       Serial2.printf("%2.2f,",battery_voltage);
+      Serial2.printf("%5d,", micros_time);
       Serial2.printf("\n");
       break;
     case 3:
@@ -295,6 +297,9 @@ void initEncoder(void) {
 //------------------------------------------------------------------//
 void lcdDisplay(void) {
 
+  unsigned int micros_buff;
+  micros_buff = micros();
+
   // Clear Display
   M5.Lcd.setTextColor(BLACK);
   M5.Lcd.setCursor(10, 10);
@@ -340,6 +345,8 @@ void lcdDisplay(void) {
   roll_buff = roll;
   yaw_buff = yaw;
   //err_buff2 = err;
+
+  micros_time = micros() - micros_buff;
 
 
 }
