@@ -56,11 +56,11 @@ unsigned char pattern_buff;
 unsigned int  time_buff;
 
 
-int err;
-int err_buff;
-int err_buff2;
-int kp;
-int kd;
+char motor_output;
+float climber_altitude;
+float climber_velocity;
+float slip_rate=4.3;
+float battery_voltage=26.0;
 
 // MPU
 float accX = 0.0F;
@@ -113,7 +113,7 @@ void setup() {
 
   // Initialize MPU
   M5.IMU.Init();
-  Serial.begin(115200);
+  Serial2.begin(57600);
 
   esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
   esc.write(0);
@@ -212,6 +212,14 @@ void timerInterrupt(void) {
       if(pattern == 11 && (power < 100)) power++;
       break;
     case 2:
+      Serial2.printf("%3d,",millis()/1700);
+      Serial2.printf("%3d,",pattern);
+      Serial2.printf("%3d,",motor_output);
+      Serial2.printf("%3.1f,",climber_altitude);
+      Serial2.printf("%2.2f,",climber_velocity);
+      Serial2.printf("%2.2f,",slip_rate);
+      Serial2.printf("%2.2f,",battery_voltage);
+      Serial2.printf("\n");
       break;
     case 3:
       break;
@@ -236,7 +244,7 @@ void timerInterrupt(void) {
 
 //------------------------------------------------------------------//
 
-void velocityControl(int object_count) {
+/*void velocityControl(int object_count) {
   int i, j;
   err = delta_count - object_count;
   i = err * kp;
@@ -246,7 +254,7 @@ void velocityControl(int object_count) {
   err_buff = err;
   if(power>100) power = 100;
   if(power<-100) power = -100;
-}
+}*/
 
 
 // Initialize Encoder
@@ -294,7 +302,7 @@ void lcdDisplay(void) {
   M5.Lcd.setCursor(10, 40);
   M5.Lcd.printf("Delta Counter: %6d", delta_count_buff);  
   M5.Lcd.setCursor(10, 70);
-  M5.Lcd.printf("Total Counter: %6d", total_count_buff); 
+  M5.Lcd.printf("Total Counter: %3d", total_count_buff); 
   M5.Lcd.setCursor(10, 100);
   M5.Lcd.printf("Motor Power: %3d", power_buff); 
   M5.Lcd.setCursor(10, 130);
@@ -302,7 +310,7 @@ void lcdDisplay(void) {
   M5.Lcd.setCursor(10, 160);
   M5.Lcd.printf("ROLL: %3f", roll_buff);
   M5.Lcd.setCursor(10, 190);
-  M5.Lcd.printf("ERR: %3d", err_buff2);
+  /*M5.Lcd.printf("ERR: %3d", err_buff2);*/
 
 
   // Refresh Display
@@ -312,7 +320,7 @@ void lcdDisplay(void) {
   M5.Lcd.setCursor(10, 40);
   M5.Lcd.printf("Counter value: %6d", delta_count);
   M5.Lcd.setCursor(10, 70);
-  M5.Lcd.printf("Total Counter: %6d", total_count); 
+  M5.Lcd.printf("Total Counter: %3d", total_count); 
   M5.Lcd.setCursor(10, 100);
   M5.Lcd.printf("Motor Power: %3d", power); 
   M5.Lcd.setCursor(10, 130);
@@ -320,7 +328,7 @@ void lcdDisplay(void) {
   M5.Lcd.setCursor(10, 160);
   M5.Lcd.printf("ROLL: %3f", roll);
   M5.Lcd.setCursor(10, 190);
-  M5.Lcd.printf("ERR: %3d", err);
+  //M5.Lcd.printf("ERR: %3d", err);
 
 
   // Load Buffer
@@ -331,7 +339,7 @@ void lcdDisplay(void) {
   pitch_buff = pitch;
   roll_buff = roll;
   yaw_buff = yaw;
-  err_buff2 = err;
+  //err_buff2 = err;
 
 
 }
