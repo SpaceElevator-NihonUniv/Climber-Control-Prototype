@@ -19,7 +19,7 @@
 
 //Define
 //------------------------------------------------------------------//
-#define TIMER_INTERRUPT 10                  // Timer Interrupt Period
+#define TIMER_INTERRUPT 1                    // Timer Interrupt Period
 
 #define ESC_LDEC_CHANNEL 3                  // 50Hz LDEC Timer
 
@@ -36,6 +36,13 @@ hw_timer_t * timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 volatile int interruptCounter;
 int iTimer10;
+int iTimer50;
+int bufferIndex;
+int writeBank;
+int bufferRecords;
+int RecordType;
+int rp;
+int buffer;
 
 // Encoder1
 int16_t delta_count = 0;                    // Delta Counter
@@ -54,6 +61,7 @@ int power_buff;
 unsigned char pattern = 0;
 unsigned char pattern_buff;
 unsigned int  time_buff;
+unsigned int  micros_time;
 
 
 char motor_output;
@@ -113,7 +121,7 @@ void setup() {
 
   // Initialize MPU
   M5.IMU.Init();
-  Serial2.begin(57600);
+  Serial.begin(115200);
 
   esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
   esc.write(0);
@@ -129,7 +137,7 @@ void loop() {
   switch (pattern) {
   case 0:    
     esc.write(0);
-    lcdDisplay();
+    //lcdDisplay();
     buttonAction();
     break;  
 
@@ -201,29 +209,19 @@ void timerInterrupt(void) {
     pcnt_counter_clear(PCNT_UNIT_0);  
     total_count += delta_count;
 
-    M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
-    M5.IMU.getAccelData(&accX,&accY,&accZ);
-    M5.IMU.getAhrsData(&pitch,&roll,&yaw);
-    M5.IMU.getTempData(&temp);
-    
-    iTimer10++;
-    switch (iTimer10) {
+    //Serial.printf("%3ld\n",millis());
+    //10ms timerInterrupt
+    switch(iTimer10){
     case 1:
-      if(pattern == 11 && (power < 100)) power++;
       break;
     case 2:
-      Serial2.printf("%3d,",millis()/1700);
-      Serial2.printf("%3d,",pattern);
-      Serial2.printf("%3d,",motor_output);
-      Serial2.printf("%3.1f,",climber_altitude);
-      Serial2.printf("%2.2f,",climber_velocity);
-      Serial2.printf("%2.2f,",slip_rate);
-      Serial2.printf("%2.2f,",battery_voltage);
-      Serial2.printf("\n");
+      M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
       break;
     case 3:
+       M5.IMU.getAccelData(&accX,&accY,&accZ);
       break;
     case 4:
+      M5.IMU.getTempData(&temp);
       break;
     case 5:
       break;
@@ -236,7 +234,32 @@ void timerInterrupt(void) {
     case 9:
       break;
     case 10:
-      iTimer10 = 0;
+     iTimer10 = 0;
+      break;
+    }
+
+    iTimer50++;
+    //50ms timerInterrupt
+    switch (iTimer50) {
+    case 10:
+      if(pattern == 11 && (power < 100)) power++;
+      break;
+    case 20:
+     Serial.printf("%3ld,",millis()/1000);
+     Serial.printf("%3d,",pattern);
+     Serial.printf("%3d,",motor_output);
+     Serial.printf("%3.1f,",climber_altitude);
+     Serial.printf("%2.2f,",climber_velocity);
+     Serial.printf("%2.2f,",slip_rate);
+     Serial.printf("%2.2f,",battery_voltage);
+     Serial.printf("%5d,",micros_time);
+     Serial.printf("");
+     Serial.printf("\n");
+      break;
+    case 30:
+     break;
+    case 50:
+      iTimer50 = 0;
       break;
     }
   }
@@ -296,50 +319,40 @@ void initEncoder(void) {
 void lcdDisplay(void) {
 
   // Clear Display
-  M5.Lcd.setTextColor(BLACK);
-  M5.Lcd.setCursor(10, 10);
-  M5.Lcd.printf("Pattern: %3d", pattern_buff);  
-  M5.Lcd.setCursor(10, 40);
-  M5.Lcd.printf("Delta Counter: %6d", delta_count_buff);  
-  M5.Lcd.setCursor(10, 70);
-  M5.Lcd.printf("Total Counter: %3d", total_count_buff); 
-  M5.Lcd.setCursor(10, 100);
-  M5.Lcd.printf("Motor Power: %3d", power_buff); 
-  M5.Lcd.setCursor(10, 130);
-  M5.Lcd.printf("PITCH: %3f", pitch_buff);
-  M5.Lcd.setCursor(10, 160);
-  M5.Lcd.printf("ROLL: %3f", roll_buff);
-  M5.Lcd.setCursor(10, 190);
+ //M5.Lcd.setTextColor(BLACK);
+ //M5.Lcd.setCursor(10, 10);
+ //M5.Lcd.printf("Pattern: %3d", pattern_buff);  
+ //M5.Lcd.setCursor(10, 40);
+ //M5.Lcd.printf("Delta Counter: %6d", delta_count_buff);  
+ //M5.Lcd.setCursor(10, 70);
+ //M5.Lcd.printf("Total Counter: %3ld", total_count_buff); 
+ //M5.Lcd.setCursor(10, 100);
+ //M5.Lcd.printf("Motor Power: %3d", power_buff); 
+ //M5.Lcd.setCursor(10, 130);
+ //M5.Lcd.printf("PITCH: %3f", pitch_buff);
+ //M5.Lcd.setCursor(10, 160);
+ //M5.Lcd.printf("ROLL: %3f", roll_buff);
+ //M5.Lcd.setCursor(10, 190);
   /*M5.Lcd.printf("ERR: %3d", err_buff2);*/
 
 
   // Refresh Display
-  M5.Lcd.setTextColor(CYAN);
+  M5.Lcd.setTextColor(CYAN,BLACK);
   M5.Lcd.setCursor(10, 10);
   M5.Lcd.printf("Pattern: %3d", pattern);  
   M5.Lcd.setCursor(10, 40);
   M5.Lcd.printf("Counter value: %6d", delta_count);
   M5.Lcd.setCursor(10, 70);
-  M5.Lcd.printf("Total Counter: %3d", total_count); 
+  M5.Lcd.printf("Total Counter: %3ld", total_count); 
   M5.Lcd.setCursor(10, 100);
   M5.Lcd.printf("Motor Power: %3d", power); 
-  M5.Lcd.setCursor(10, 130);
-  M5.Lcd.printf("PITCH: %3f", pitch);
-  M5.Lcd.setCursor(10, 160);
-  M5.Lcd.printf("ROLL: %3f", roll);
-  M5.Lcd.setCursor(10, 190);
+  //M5.Lcd.setCursor(10, 130);
+  //M5.Lcd.printf("PITCH: %3f", pitch);
+  //M5.Lcd.setCursor(10, 160);
+  //M5.Lcd.printf("ROLL: %3f", roll);
+  //M5.Lcd.setCursor(10, 190);
   //M5.Lcd.printf("ERR: %3d", err);
 
-
-  // Load Buffer
-  pattern_buff = pattern;
-  delta_count_buff = delta_count;
-  total_count_buff = total_count;
-  power_buff = power;
-  pitch_buff = pitch;
-  roll_buff = roll;
-  yaw_buff = yaw;
-  //err_buff2 = err;
 
 
 }
