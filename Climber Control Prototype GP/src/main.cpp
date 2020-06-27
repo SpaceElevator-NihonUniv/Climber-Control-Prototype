@@ -62,7 +62,7 @@ unsigned char pattern = 0;
 unsigned char pattern_buff;
 unsigned int  time_buff;
 unsigned int  micros_time;
-
+bool lcd_flag = false;
 
 char motor_output;
 float climber_altitude;
@@ -137,7 +137,7 @@ void loop() {
   switch (pattern) {
   case 0:    
     esc.write(0);
-    //lcdDisplay();
+    lcdDisplay();
     buttonAction();
     break;  
 
@@ -245,20 +245,21 @@ void timerInterrupt(void) {
       if(pattern == 11 && (power < 100)) power++;
       break;
     case 20:
-     Serial.printf("%3ld,",millis()/1000);
-     Serial.printf("%3d,",pattern);
-     Serial.printf("%3d,",motor_output);
-     Serial.printf("%3.1f,",climber_altitude);
-     Serial.printf("%2.2f,",climber_velocity);
-     Serial.printf("%2.2f,",slip_rate);
-     Serial.printf("%2.2f,",battery_voltage);
-     Serial.printf("%5d,",micros_time);
-     Serial.printf("");
+     Serial.printf("%3.2f, ",(float)millis()/1000);
+     Serial.printf("%3d, ",pattern);
+     Serial.printf("%3d, ",motor_output);
+     Serial.printf("%3.1f, ",climber_altitude);
+     Serial.printf("%2.2f, ",climber_velocity);
+     Serial.printf("%2.2f, ",slip_rate);
+     Serial.printf("%2.2f, ",battery_voltage);
+     Serial.printf("%5d, ",micros_time);
+     Serial.printf("%5f, ",pitch);
      Serial.printf("\n");
       break;
     case 30:
      break;
     case 50:
+      lcd_flag = true;
       iTimer50 = 0;
       break;
     }
@@ -317,44 +318,23 @@ void initEncoder(void) {
 // LCD Display
 //------------------------------------------------------------------//
 void lcdDisplay(void) {
-
-  // Clear Display
- //M5.Lcd.setTextColor(BLACK);
- //M5.Lcd.setCursor(10, 10);
- //M5.Lcd.printf("Pattern: %3d", pattern_buff);  
- //M5.Lcd.setCursor(10, 40);
- //M5.Lcd.printf("Delta Counter: %6d", delta_count_buff);  
- //M5.Lcd.setCursor(10, 70);
- //M5.Lcd.printf("Total Counter: %3ld", total_count_buff); 
- //M5.Lcd.setCursor(10, 100);
- //M5.Lcd.printf("Motor Power: %3d", power_buff); 
- //M5.Lcd.setCursor(10, 130);
- //M5.Lcd.printf("PITCH: %3f", pitch_buff);
- //M5.Lcd.setCursor(10, 160);
- //M5.Lcd.printf("ROLL: %3f", roll_buff);
- //M5.Lcd.setCursor(10, 190);
-  /*M5.Lcd.printf("ERR: %3d", err_buff2);*/
-
-
-  // Refresh Display
-  M5.Lcd.setTextColor(CYAN,BLACK);
-  M5.Lcd.setCursor(10, 10);
-  M5.Lcd.printf("Pattern: %3d", pattern);  
-  M5.Lcd.setCursor(10, 40);
-  M5.Lcd.printf("Counter value: %6d", delta_count);
-  M5.Lcd.setCursor(10, 70);
-  M5.Lcd.printf("Total Counter: %3ld", total_count); 
-  M5.Lcd.setCursor(10, 100);
-  M5.Lcd.printf("Motor Power: %3d", power); 
-  //M5.Lcd.setCursor(10, 130);
-  //M5.Lcd.printf("PITCH: %3f", pitch);
-  //M5.Lcd.setCursor(10, 160);
-  //M5.Lcd.printf("ROLL: %3f", roll);
-  //M5.Lcd.setCursor(10, 190);
-  //M5.Lcd.printf("ERR: %3d", err);
-
-
-
+  if(lcd_flag) {
+    // Refresh Display
+    M5.Lcd.setTextColor(CYAN,BLACK);
+    M5.Lcd.setCursor(10, 10);
+    M5.Lcd.printf("Pattern: %3d", pattern);  
+    M5.Lcd.setCursor(10, 40);
+    M5.Lcd.printf("Counter value: %6d", delta_count);
+    M5.Lcd.setCursor(10, 70);
+    M5.Lcd.printf("Total Counter: %3ld", total_count); 
+    M5.Lcd.setCursor(10, 100);
+    M5.Lcd.printf("Motor Power: %3d", power); 
+    M5.Lcd.setCursor(10, 130);
+    M5.Lcd.printf("PITCH: %3f", pitch);
+    M5.Lcd.setCursor(10, 160);
+    M5.Lcd.printf("ROLL: %3f", roll);
+    lcd_flag = false;
+  }
 }
 
 // Button Action
