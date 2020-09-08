@@ -19,7 +19,7 @@
 
 //Define
 //------------------------------------------------------------------//
-#define TIMER_INTERRUPT 1                    // Timer Interrupt Period
+#define TIMER_INTERRUPT 1                   // Timer Interrupt Period
 
 #define ESC_LDEC_CHANNEL 3                  // 50Hz LDEC Timer
 
@@ -63,12 +63,27 @@ unsigned char pattern_buff;
 unsigned int  time_buff;
 unsigned int  micros_time;
 bool lcd_flag = false;
+bool sd_insert = false;
+int lcd_pattern = 10;
+uint16_t lcd_back = 0;
 
 char motor_output;
 float climber_altitude;
 float climber_velocity;
 float slip_rate=4.3;
 float battery_voltage=26.0;
+
+//Timer Interrupt
+char  xbee_re_buffer[16];
+unsigned  int xbee_index;
+
+unsigned char se_pattern;
+unsigned char re_pattern;
+float re_val;
+int sleep_flag;
+
+
+
 
 // MPU
 float accX = 0.0F;
@@ -99,6 +114,8 @@ void initEncoder(void);
 void buttonAction(void);
 void lcdDisplay(void);
 void velocityControl(int object_count);
+void xbee_re(void);
+void xbee_se(void);
 
 //Setup
 //------------------------------------------------------------------//
@@ -120,11 +137,20 @@ void setup() {
   Wire.setClock(400000);
 
   // Initialize MPU
-  M5.IMU.Init();
+  //M5.IMU.Init();
   Serial.begin(115200);
 
-  esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
-  esc.write(0);
+  //esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
+  //esc.write(0);
+//
+  //sd_insert = SD.begin(TFCARD_CS_PIN, SPI,  24000000);
+  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-sd.jpg", 280,  0);
+  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);
+  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-wi-fi-1.jpg", 200,  0);
+  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
+
+  
+
 
 }
 
@@ -136,9 +162,9 @@ void loop() {
 
   switch (pattern) {
   case 0:    
-    esc.write(0);
-    lcdDisplay();
-    buttonAction();
+    //esc.write(0);
+    //lcdDisplay();
+    //buttonAction();
     break;  
 
   case 11:
@@ -193,6 +219,8 @@ case 14:
 
 
   }
+  //xbee_re();
+  //xbee_se();
    
 }
 
@@ -205,9 +233,14 @@ void timerInterrupt(void) {
     interruptCounter--;
     portEXIT_CRITICAL(&timerMux);
     
-    pcnt_get_counter_value(PCNT_UNIT_0, &delta_count);
-    pcnt_counter_clear(PCNT_UNIT_0);  
-    total_count += delta_count;
+    //pcnt_get_counter_value(PCNT_UNIT_0, &delta_count);
+    //pcnt_counter_clear(PCNT_UNIT_0);  
+    //total_count += delta_count;
+
+    lcd_back += 1;
+    M5.Lcd.setCursor(0, 0);
+    M5.Lcd.printf("%d\n", lcd_back); 
+    M5.Lcd.printf("%d\n", millis() - lcd_back); 
 
     //Serial.printf("%3ld\n",millis());
     //10ms timerInterrupt
@@ -215,13 +248,13 @@ void timerInterrupt(void) {
     case 1:
       break;
     case 2:
-      M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
+      //M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
       break;
     case 3:
-       M5.IMU.getAccelData(&accX,&accY,&accZ);
+      //M5.IMU.getAccelData(&accX,&accY,&accZ);
       break;
     case 4:
-      M5.IMU.getTempData(&temp);
+      //M5.IMU.getTempData(&temp);
       break;
     case 5:
       break;
@@ -245,27 +278,322 @@ void timerInterrupt(void) {
       if(pattern == 11 && (power < 100)) power++;
       break;
     case 20:
-     Serial.printf("%3.2f, ",(float)millis()/1000);
-     Serial.printf("%3d, ",pattern);
-     Serial.printf("%3d, ",motor_output);
-     Serial.printf("%3.1f, ",climber_altitude);
-     Serial.printf("%2.2f, ",climber_velocity);
-     Serial.printf("%2.2f, ",slip_rate);
-     Serial.printf("%2.2f, ",battery_voltage);
-     Serial.printf("%5d, ",micros_time);
-     Serial.printf("%5f, ",pitch);
-     Serial.printf("\n");
+      //if(se_pattern ==  101 ){
+      //Serial.printf("%3.2f, ",(float)millis()/1000);
+      //Serial.printf("%3d, "  ,pattern);
+      //Serial.printf("%3d, "  ,motor_output);
+      //Serial.printf("%3.1f, ",climber_altitude);
+      //Serial.printf("%2.2f, ",climber_velocity);
+      //Serial.printf("%2.2f, ",slip_rate);
+      //Serial.printf("%2.2f, ",battery_voltage);
+      //Serial.printf("%5d, "  ,micros_time);
+      //Serial.printf("%5f, "  ,pitch);
+      //Serial.printf("\n");
+      //}
       break;
     case 30:
      break;
     case 50:
-      lcd_flag = true;
+      
+      //M5.Lcd.setCursor(0, 0);
+      //M5.Lcd.printf("%d", lcd_back); 
+      //if( lcd_pattern > 10 && lcd_pattern < 20 && lcd_back > 10000 ) {
+      //  M5.lcd.clear();
+      //  lcd_pattern = 10;
+      //}
+      //lcd_flag = true;
       iTimer50 = 0;
       break;
     }
   }
 }
 
+//XBee Re
+//------------------------------------------------------------------//
+void xbee_re(void){
+
+  while(Serial.available()){
+    xbee_re_buffer[xbee_index]=Serial.read();
+    Serial.write(xbee_re_buffer[xbee_index]);
+
+    if(xbee_re_buffer[xbee_index]==0x08){
+      xbee_re_buffer[xbee_index-1]==NULL;
+      xbee_index--;
+      Serial.printf(" ");
+      Serial.write(0x08);
+    }else if(xbee_re_buffer[xbee_index]==0x0D){
+      Serial.read();
+      Serial.printf("\n\n");
+      if(se_pattern == 0){
+        re_pattern = atoi(xbee_re_buffer);
+      }/*else if(se_pattern == 2){
+        re_val = atof(xbee_re_buffer);
+      }*/
+      xbee_index = 0;
+
+      switch(re_pattern){
+      case 0:
+        se_pattern = 1;
+        break;
+
+      case 11:
+        se_pattern = 11;
+        re_pattern = 21;
+        break;
+      case 21:
+        if(re_val == 1){
+          pattern = 101;
+        } else {
+          re_pattern = 1;
+        }
+        re_pattern = 0;
+        break;
+
+      case 31:
+        se_pattern = 31;
+        re_pattern = 41;
+        break;
+      case 41:
+        motor_output = re_val;
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 32:
+        se_pattern = 32;
+        re_pattern = 42;
+        break;
+      case 42:
+        climber_altitude = re_val;
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 33:
+        se_pattern = 33;
+        re_pattern = 43;
+        break;
+      case 43:
+        climber_velocity = re_val;
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 34:
+        se_pattern = 34;
+        re_pattern = 44;
+        break;
+      case 44:
+        slip_rate = re_val;
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 35:
+        se_pattern = 35;
+        re_pattern = 45;
+        break;
+      case 45:
+        battery_voltage = re_val;
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 36:
+        se_pattern = 36;
+        re_pattern = 46;
+        break;
+      case 46:
+        micros_time = re_val;
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 37:
+        se_pattern = 37;
+        re_pattern = 47;
+        break;
+      case 47:
+        pitch = re_val;
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 201:
+        if(re_val == 1){
+          pattern = 201;
+        }else{
+          se_pattern = 1;
+        }
+        re_pattern = 0;
+        break;
+
+      case 211:
+        if(re_val == 1){
+          pattern = 211;
+        }else{
+          se_pattern = 1;
+        }
+        re_pattern = 0;
+        break;
+      }
+      
+      } else if( xbee_re_buffer[xbee_index] ==  'T' ||  xbee_re_buffer[xbee_index] == 't'){
+        re_pattern  = 0;
+        se_pattern  = 101;
+        Serial.printf("\n");
+      } else if( xbee_re_buffer[xbee_index] ==  'U' ||  xbee_re_buffer[xbee_index] == 'u'){
+        re_pattern  = 201;
+        se_pattern  = 201;
+        Serial.printf("\n");
+      } else if( xbee_re_buffer[xbee_index] ==  'D' ||  xbee_re_buffer[xbee_index] == 'd'){
+        re_pattern  = 211;
+        se_pattern  = 211;
+        Serial.printf("\n");
+      } else if( xbee_re_buffer[xbee_index] ==  ' '){
+  
+        lcd_pattern = 0;
+        pattern = 2;
+        Serial.printf("\n\n");
+        Serial.printf(" Emargency Stop Enable \n ");
+        Serial.printf(" return Case 0 \n ");
+        re_pattern = 0;
+        se_pattern = 1;
+        Serial.printf("\n");
+      }else{
+          xbee_index++;
+      }
+    
+    }
+}
+
+//XBee_SE
+//------------------------------------------------------------------//
+void xbee_se(void){
+
+  switch (se_pattern){
+    //Waiting Command
+    case 0:
+      break;
+
+    case 1:
+    Serial.printf("\n\n\n\n\n\n");
+    Serial.printf("climber Controller (M5Stack version) "
+                    "Test program Ver1.20\n");
+    Serial.printf("\n");
+    Serial.printf(" 11 : Start Seqwnse\n");
+    Serial.printf("\n");
+    Serial.printf(" 31 :  Motor Output     [%3d]\n " ,motor_output);
+    Serial.printf(" 32 :  Climber Altitude [%3.1f]\n ",climber_altitude);
+    Serial.printf(" 33 :  Climber Velocity [%2.2f]\n ",climber_velocity);
+    Serial.printf(" 34 :  Slip  Rate       [%2.2f]\n ",slip_rate);
+    Serial.printf(" 35 :  Battery Voltage  [%2.2f]\n ",battery_voltage);
+    Serial.printf(" 36 :  Micros  Time     [%5d]\n"  ,micros_time);
+    Serial.printf(" 37 :  Pitch            [%5f]\n "  ,pitch);
+    Serial.printf("\n");
+    Serial.printf(" T : Terementry\n");
+    Serial.printf(" U : Manual  Climb\n");
+    Serial.printf(" D : Manual  Desvent\n");
+
+    Serial.printf("\n");
+    Serial.printf(" Please  enter 11 35 ");
+
+    se_pattern = 0;
+    break;
+
+  //Waiting value
+  case 2 :
+    break;
+
+  case 11:
+    Serial.printf("\n Check Current Paramenters\n");
+    Serial.printf("\n");
+    Serial.printf(" Motor Output     [%3d]\n   " ,motor_output);
+    Serial.printf(" Climber Altitude [%3.1f]\n ",climber_altitude);
+    Serial.printf(" Climber Velocity [%2.2f]\n ",climber_velocity);
+    Serial.printf(" Slip  Rate       [%2.2f]\n ",slip_rate);
+    Serial.printf(" Battery Voltage  [%2.2f]\n ",battery_voltage);
+    Serial.printf(" Micros  Time     [%5d]\n   "  ,micros_time);
+    Serial.printf(" Pitch            [%5f]\n   "  ,pitch);
+    Serial.printf("\n");
+    Serial.printf(" Confilm to Climb? ->  ");
+    se_pattern  = 2;
+    break;
+
+  case 31:
+     Serial.printf(" Motor Output [%3d]\n " ,motor_output);
+     Serial.printf(" Please enter 0 to 4000 -> ");
+     se_pattern = 2;
+     break;
+
+  case 32:
+      Serial.printf(" Climber Altitude [%3.1f]\n ",climber_altitude);
+      Serial.printf(" Please enter 0.0 to 1000 -> ");
+      se_pattern = 2;
+      break;
+
+  case 33:
+      Serial.printf(" Climber Velocity [%2.2f]\n ",climber_velocity);
+      Serial.printf(" Please enter 0.00 to 50 -> ");
+      se_pattern = 2;
+      break;
+    
+  case 34:
+      Serial.printf(" Slip  Rate [%2.2f]\n ",slip_rate);
+      Serial.printf(" Please enter 0.00 to 50 -> ");
+      se_pattern = 2;
+      break;
+
+  case 35:
+      Serial.printf(" Battery Voltage [%2.2f]\n ",battery_voltage);
+      Serial.printf(" Please enter 0.00 to 50 -> ");
+      se_pattern = 2;
+      break;
+
+  //Telementry Mode
+  case 101:
+    break;
+
+  //Manual Control Mode
+  case 201:
+    Serial.printf("\n Check Current Paramenters\n");
+    Serial.printf("\n");
+    Serial.printf(" Motor Output     [%3d]\n " ,motor_output);
+    Serial.printf(" Climber Altitude [%3.1f]\n ",climber_altitude);
+    Serial.printf(" Climber Velocity [%2.2f]\n ",climber_velocity);
+    Serial.printf(" Slip  Rate       [%2.2f]\n ",slip_rate);
+    Serial.printf(" Battery Voltage  [%2.2f]\n ",battery_voltage);
+    Serial.printf(" Micros  Time     [%5d]\n"  ,micros_time);
+    Serial.printf(" Pitch            [%5f]\n "  ,pitch);
+    Serial.printf("\n");
+    Serial.printf(" Confilm to Climb? ->  ");
+    se_pattern  = 2;
+    break;
+
+  case 211:
+    Serial.printf("\n Check Current Paramenters\n");
+    Serial.printf("\n");
+    Serial.printf(" Motor Output     [%3d]\n " ,motor_output);
+    Serial.printf(" Climber Altitude [%3.1f]\n ",climber_altitude);
+    Serial.printf(" Climber Velocity [%2.2f]\n ",climber_velocity);
+    Serial.printf(" Slip  Rate       [%2.2f]\n ",slip_rate);
+    Serial.printf(" Battery Voltage  [%2.2f]\n ",battery_voltage);
+    Serial.printf(" Micros  Time     [%5d]\n"  ,micros_time);
+    Serial.printf(" Pitch            [%5f]\n "  ,pitch);
+    Serial.printf("\n");
+    Serial.printf(" Confilm to Climb? ->  ");
+    se_pattern  = 2;
+    break;
+}
+  {
+  //case /* constant-expression */:
+    /* code */
+    //break;
+  
+  //default:
+   // break;
+  }
+}
 //------------------------------------------------------------------//
 
 /*void velocityControl(int object_count) {
@@ -319,20 +647,122 @@ void initEncoder(void) {
 //------------------------------------------------------------------//
 void lcdDisplay(void) {
   if(lcd_flag) {
-    // Refresh Display
-    M5.Lcd.setTextColor(CYAN,BLACK);
-    M5.Lcd.setCursor(10, 10);
-    M5.Lcd.printf("Pattern: %3d", pattern);  
-    M5.Lcd.setCursor(10, 40);
-    M5.Lcd.printf("Counter value: %6d", delta_count);
-    M5.Lcd.setCursor(10, 70);
-    M5.Lcd.printf("Total Counter: %3ld", total_count); 
-    M5.Lcd.setCursor(10, 100);
-    M5.Lcd.printf("Motor Power: %3d", power); 
-    M5.Lcd.setCursor(10, 130);
-    M5.Lcd.printf("PITCH: %3f", pitch);
-    M5.Lcd.setCursor(10, 160);
-    M5.Lcd.printf("ROLL: %3f", roll);
+    switch (lcd_pattern){
+    //Waiting Command
+  
+    case 10:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawJpgFile(SD, "/icon/status.jpg", 14, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/control.jpg", 120, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 238, 78);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Status"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Control");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Params");  
+
+     //M5.Lcd.drawJpgFile(SD, "/icon/icons8-sd.jpg", 280,  0);
+     //M5.Lcd.drawJpgFile(battery-revel, "/icon/icons8-battery-revel-0.jpg", 250,  0);
+     //M5.Lcd.drawJpgFile(battery-revel, "/icon/icons8-battery-revel-25.jpg", 250,  0);
+     //M5.Lcd.drawJpgFile(battery-revel, "/icon/icons8-battery-revel-50.jpg", 250,  0);
+     //M5.Lcd.drawJpgFile(battery-revel, "/icon/icons8-battery-revel-75.jpg", 250,  0);
+     //M5.Lcd.drawJpgFile(battery-revel, "/icon/icons8-battery-revel-100.jpg", 250,  0);
+     //M5.Lcd.drawJpgFile(wi-fi, "/icon/icons8-sd.jpg", 280,  0);
+      break;
+
+    case 11:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, ORANGE);
+      M5.Lcd.fillRect(0, 29, 106, 2, ORANGE);
+      M5.Lcd.fillRect(0, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(105, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(0, 238, 106, 2, ORANGE);
+      M5.Lcd.drawJpgFile(SD, "/icon/status.jpg", 14, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/control.jpg", 120, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 238, 78);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Status"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Control");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Params");
+      break;
+
+    case 12:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, ORANGE);
+      M5.Lcd.fillRect(105, 29, 108, 2, ORANGE);
+      M5.Lcd.fillRect(105, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(213, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(105, 238, 108, 2, ORANGE);
+      M5.Lcd.drawJpgFile(SD, "/icon/status.jpg", 14, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/control.jpg", 120, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 238, 78);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Status"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Control");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Params");
+      break;
+
+    case 13:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, ORANGE);
+      M5.Lcd.fillRect(213, 29, 106, 2, ORANGE);
+      M5.Lcd.fillRect(213, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(318, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(213, 238, 106, 2, ORANGE);
+      M5.Lcd.drawJpgFile(SD, "/icon/status.jpg", 14, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/control.jpg", 120, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 238, 78);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Status"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Control");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Params");
+      break;
+
+    case 21:
+      // Refresh Display
+      //M5.Lcd.setTextColor(CYAN,BLACK);
+      //M5.Lcd.setCursor(10, 10);
+      //M5.Lcd.printf("Pattern: %3d", pattern);  
+      //M5.Lcd.setCursor(10, 40);
+      //M5.Lcd.printf("Counter value: %6d", delta_count);
+      //M5.Lcd.setCursor(10, 70);
+      //M5.Lcd.printf("Total Counter: %3ld", total_count); 
+      //M5.Lcd.setCursor(10, 100);
+      //M5.Lcd.printf("Motor Power: %3d", power); 
+      //M5.Lcd.setCursor(10, 130);
+      //M5.Lcd.printf("PITCH: %3f", pitch);
+      //M5.Lcd.setCursor(10, 160);
+      //M5.Lcd.printf("ROLL: %3f", roll);
+      break;
+    }
     lcd_flag = false;
   }
 }
@@ -347,6 +777,14 @@ void buttonAction(void){
     }
   } else if (M5.BtnB.wasPressed()) {
   } else if (M5.BtnC.wasPressed()) {
+    M5.lcd.clear();
+    if( lcd_pattern >= 10  && lcd_pattern < 20 ){
+      lcd_back = 0;
+      lcd_pattern++;
+      if( lcd_pattern > 13 ) lcd_pattern = 11; 
+    }
+
+
   }
 }
 
