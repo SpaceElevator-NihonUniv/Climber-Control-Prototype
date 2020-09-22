@@ -23,8 +23,10 @@
 
 #define ESC_LDEC_CHANNEL 3                  // 50Hz LDEC Timer
 
-#define PULSE_INPUT_PIN 35                  // Rotaly Encoder Phase A
-#define PULSE_CTRL_PIN  36                  // Rotaly Encoder Phase B
+#define PULSE_INPUT_PIN_1 25                // Rotaly Encoder Phase A
+#define PULSE_CTRL_PIN_1  26                // REncoder Phase B
+#define PULSE_INPUT_PIN_2 13                // Rotaly Encoder Phase A
+#define PULSE_CTRL_PIN_2  0                 // Rotaly Encoder Phase B
 #define PCNT_H_LIM_VAL  10000               // Counter Limit H
 #define PCNT_L_LIM_VAL -10000               // Counter Limit L 
 
@@ -45,14 +47,26 @@ int rp;
 int buffer;
 
 // Encoder1
-int16_t delta_count = 0;                    // Delta Counter
-long    total_count = 0;                    // Total Counter
+int16_t delta_count_1 = 0;                    // Delta Counter
+long    total_count_1 = 0;                    // Total Counter
+float   velocity_1;
+float   travel_1;
 
-int16_t delta_count_buff;
-long    total_count_buff;
+int16_t delta_count_1_buff;
+long    total_count_1_buff;
+
+
+int16_t delta_count_2 = 0;                    // Delta Counter
+long    total_count_2 = 0;                    // Total Counter
+float   velocity_2;
+float   travel_2;
+
+int16_t delta_count_2_buff;
+long    total_count_2_buff;
+unsigned int braking_distance;
 
 // ESC
-static const int escPin = 26;
+static const int escPin = 2;
 Servo esc;
 int power = 0;
 int power_buff;
@@ -104,6 +118,11 @@ float pitch_buff;
 float roll_buff;
 float yaw_buff;
 
+// Paramenters
+unsigned int target_travel = 15;
+unsigned int target_velocity = 9;
+
+
 
 //Prototype
 //------------------------------------------------------------------//
@@ -137,17 +156,17 @@ void setup() {
   Wire.setClock(400000);
 
   // Initialize MPU
-  //M5.IMU.Init();
+  M5.IMU.Init();
   Serial.begin(115200);
 
-  //esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
-  //esc.write(0);
-//
-  //sd_insert = SD.begin(TFCARD_CS_PIN, SPI,  24000000);
-  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-sd.jpg", 280,  0);
-  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);
-  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-wi-fi-1.jpg", 200,  0);
-  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
+  esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
+  esc.write(0);
+
+  sd_insert = SD.begin(TFCARD_CS_PIN, SPI,  24000000);
+  M5.Lcd.drawJpgFile(SD, "/icon/icons8-sd.jpg", 280,  0);
+  M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);
+  M5.Lcd.drawJpgFile(SD, "/icon/icons8-wi-fi-1.jpg", 200,  0);
+  M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
 
   
 
@@ -162,40 +181,31 @@ void loop() {
 
   switch (pattern) {
   case 0:    
-    //esc.write(0);
-    //lcdDisplay();
-    //buttonAction();
+    esc.write(0);
+    lcdDisplay();
+    buttonAction();
     break;  
 
   case 11:
-    lcdDisplay();
     esc.write(power);
-    if( total_count >= 300000 || total_count <= -300000 ) {
-      power = 0;
-      total_count = 0; 
+    if( velocity_1 >= target_velocity || velocity_2 >= target_velocity ) {
       time_buff = millis();   
-      pattern = 13;
+      pattern = 21;
+      braking_distance = (target_velocity / 9.8)*target_velocity/2;
       break;
-    } 
-    if( power >= 100 ) {
-      pattern = 12;
-      break;
-    }    
+    }   
     break;
 
-  case 12:
-    lcdDisplay();  
+  case 21: 
     esc.write(power);
-    if( total_count >= 300000 || total_count <= -300000 ) {
-      power = 0;
-      total_count = 0; 
+    if(  travel_1 >= target_travel -   || travel_2 >= target_travel ) {
       time_buff = millis();   
-      pattern = 14;
+      pattern = 31;
       break;
     }
     break;
 
-  case 13:
+  case 31:
     lcdDisplay();
     power = 0;
     esc.write(power);
@@ -205,7 +215,7 @@ void loop() {
     }
     break;
 
-case 14:
+case 41:
     lcdDisplay();
     power = 0;
     esc.write(power);                          
@@ -233,9 +243,14 @@ void timerInterrupt(void) {
     interruptCounter--;
     portEXIT_CRITICAL(&timerMux);
     
-    //pcnt_get_counter_value(PCNT_UNIT_0, &delta_count);
-    //pcnt_counter_clear(PCNT_UNIT_0);  
-    //total_count += delta_count;
+    pcnt_get_counter_value(PCNT_UNIT_0, &delta_count_1);
+    pcnt_counter_clear(PCNT_UNIT_0);  
+    total_count_1 += delta_count_1;
+
+
+    pcnt_get_counter_value(PCNT_UNIT_1, &delta_count_2);
+    pcnt_counter_clear(PCNT_UNIT_1);  
+    total_count_2 += delta_count_2;
 
     lcd_back += 1;
     M5.Lcd.setCursor(0, 0);
@@ -278,18 +293,18 @@ void timerInterrupt(void) {
       if(pattern == 11 && (power < 100)) power++;
       break;
     case 20:
-      //if(se_pattern ==  101 ){
-      //Serial.printf("%3.2f, ",(float)millis()/1000);
-      //Serial.printf("%3d, "  ,pattern);
-      //Serial.printf("%3d, "  ,motor_output);
-      //Serial.printf("%3.1f, ",climber_altitude);
-      //Serial.printf("%2.2f, ",climber_velocity);
-      //Serial.printf("%2.2f, ",slip_rate);
-      //Serial.printf("%2.2f, ",battery_voltage);
-      //Serial.printf("%5d, "  ,micros_time);
-      //Serial.printf("%5f, "  ,pitch);
-      //Serial.printf("\n");
-      //}
+      if(se_pattern ==  101 ){
+        Serial.printf("%3.2f, ",(float)millis()/1000);
+        Serial.printf("%3d, "  ,pattern);
+        Serial.printf("%3d, "  ,motor_output);
+        Serial.printf("%3.1f, ",climber_altitude);
+        Serial.printf("%2.2f, ",climber_velocity);
+        Serial.printf("%2.2f, ",slip_rate);
+        Serial.printf("%2.2f, ",battery_voltage);
+        Serial.printf("%5d, "  ,micros_time);
+        Serial.printf("%5f, "  ,pitch);
+        Serial.printf("\n");
+      }
       break;
     case 30:
      break;
@@ -297,11 +312,15 @@ void timerInterrupt(void) {
       
       //M5.Lcd.setCursor(0, 0);
       //M5.Lcd.printf("%d", lcd_back); 
-      //if( lcd_pattern > 10 && lcd_pattern < 20 && lcd_back > 10000 ) {
-      //  M5.lcd.clear();
-      //  lcd_pattern = 10;
-      //}
-      //lcd_flag = true;
+      if( lcd_pattern > 10 && lcd_pattern < 20 && lcd_back > 2000 ) {
+        M5.lcd.clear();
+        lcd_pattern = 10;
+      }
+      else if( lcd_pattern > 110 && lcd_pattern < 120 && lcd_back > 2000){
+        M5.lcd.clear();
+        lcd_pattern = 110;
+      }
+      lcd_flag = true;
       iTimer50 = 0;
       break;
     }
@@ -613,8 +632,8 @@ void xbee_se(void){
 //------------------------------------------------------------------//
 void initEncoder(void) {
   pcnt_config_t pcnt_config_1A;
-    pcnt_config_1A.pulse_gpio_num = PULSE_INPUT_PIN;
-    pcnt_config_1A.ctrl_gpio_num = PULSE_CTRL_PIN;
+    pcnt_config_1A.pulse_gpio_num = PULSE_INPUT_PIN_1;
+    pcnt_config_1A.ctrl_gpio_num = PULSE_CTRL_PIN_1;
     pcnt_config_1A.lctrl_mode = PCNT_MODE_REVERSE;
     pcnt_config_1A.hctrl_mode = PCNT_MODE_KEEP;
     pcnt_config_1A.channel = PCNT_CHANNEL_0;
@@ -625,8 +644,8 @@ void initEncoder(void) {
     pcnt_config_1A.counter_l_lim = PCNT_L_LIM_VAL;
 
   pcnt_config_t pcnt_config_1B;
-    pcnt_config_1B.pulse_gpio_num = PULSE_CTRL_PIN;
-    pcnt_config_1B.ctrl_gpio_num = PULSE_INPUT_PIN;
+    pcnt_config_1B.pulse_gpio_num = PULSE_CTRL_PIN_1;
+    pcnt_config_1B.ctrl_gpio_num = PULSE_INPUT_PIN_1;
     pcnt_config_1B.lctrl_mode = PCNT_MODE_KEEP;
     pcnt_config_1B.hctrl_mode = PCNT_MODE_REVERSE;
     pcnt_config_1B.channel = PCNT_CHANNEL_1;
@@ -641,6 +660,36 @@ void initEncoder(void) {
   pcnt_counter_pause(PCNT_UNIT_0);              // Stop Counter
   pcnt_counter_clear(PCNT_UNIT_0);              // clear Counter
   pcnt_counter_resume(PCNT_UNIT_0);             // Start Count
+
+  pcnt_config_t pcnt_config_2A;
+    pcnt_config_2A.pulse_gpio_num = PULSE_INPUT_PIN_2;
+    pcnt_config_2A.ctrl_gpio_num = PULSE_CTRL_PIN_2;
+    pcnt_config_2A.lctrl_mode = PCNT_MODE_REVERSE;
+    pcnt_config_2A.hctrl_mode = PCNT_MODE_KEEP;
+    pcnt_config_2A.channel = PCNT_CHANNEL_0;
+    pcnt_config_2A.unit = PCNT_UNIT_1;
+    pcnt_config_2A.pos_mode = PCNT_COUNT_INC;
+    pcnt_config_2A.neg_mode = PCNT_COUNT_DEC;
+    pcnt_config_2A.counter_h_lim = PCNT_H_LIM_VAL;
+    pcnt_config_2A.counter_l_lim = PCNT_L_LIM_VAL;
+
+  pcnt_config_t pcnt_config_2B;
+    pcnt_config_2B.pulse_gpio_num = PULSE_CTRL_PIN_2;
+    pcnt_config_2B.ctrl_gpio_num = PULSE_INPUT_PIN_2;
+    pcnt_config_2B.lctrl_mode = PCNT_MODE_KEEP;
+    pcnt_config_2B.hctrl_mode = PCNT_MODE_REVERSE;
+    pcnt_config_2B.channel = PCNT_CHANNEL_1;
+    pcnt_config_2B.unit = PCNT_UNIT_1;
+    pcnt_config_2B.pos_mode = PCNT_COUNT_INC;
+    pcnt_config_2B.neg_mode = PCNT_COUNT_DEC;
+    pcnt_config_2B.counter_h_lim = PCNT_H_LIM_VAL;
+    pcnt_config_2B.counter_l_lim = PCNT_L_LIM_VAL;
+
+  pcnt_unit_config(&pcnt_config_2A);            // Initialize Unit 1A
+  pcnt_unit_config(&pcnt_config_2B);            // Initialize Unit 1B
+  pcnt_counter_pause(PCNT_UNIT_1);              // Stop Counter
+  pcnt_counter_clear(PCNT_UNIT_1);              // clear Counter
+  pcnt_counter_resume(PCNT_UNIT_1);             // Start Count
 }
 
 // LCD Display
@@ -746,7 +795,155 @@ void lcdDisplay(void) {
       M5.Lcd.printf("Params");
       break;
 
-    case 21:
+//Status    
+    case 110:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawJpgFile(SD, "/icon/brake.jpg", 14, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/sensor.jpg", 120, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 238, 78);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Brake"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Sensor");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Codec");
+      break;
+
+    case 111:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, ORANGE);
+      M5.Lcd.fillRect(0, 29, 106, 2, ORANGE);
+      M5.Lcd.fillRect(0, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(105, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(0, 238, 106, 2, ORANGE);
+      M5.Lcd.drawJpgFile(SD, "/icon/brake.jpg", 14, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/sensor.jpg", 120, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 238, 78);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Brake"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Sensor");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Codec");
+      break;
+
+    case 112:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, ORANGE);
+      M5.Lcd.fillRect(105, 29, 108, 2, ORANGE);
+      M5.Lcd.fillRect(105, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(213, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(105, 238, 108, 2, ORANGE);
+      M5.Lcd.drawJpgFile(SD, "/icon/brake.jpg", 14, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/sensor.jpg", 120, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 238, 78);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Brake"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Sensor");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Codec");
+      break;
+
+    case 113:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, ORANGE);
+      M5.Lcd.fillRect(213, 29, 106, 2, ORANGE);
+      M5.Lcd.fillRect(213, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(318, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(213, 238, 106, 2, ORANGE);
+      M5.Lcd.drawJpgFile(SD, "/icon/brake.jpg", 14, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/sensor.jpg", 120, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 238, 78);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Brake"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Sensor");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Codec");
+      break;
+
+//Status_Brake
+    case 1110:
+      M5.Lcd.drawFastVLine(160, 30, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawFastHLine(0, 30, 320, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(0, 30, 160, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(160, 30, 160, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(33, 120);
+      M5.Lcd.printf("Temper");  
+      M5.Lcd.setCursor(216, 120);
+      M5.Lcd.printf("Incli");
+      break;
+
+    
+
+//Status_Sensor
+    case 1120:
+      M5.Lcd.drawFastVLine(160, 30, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawFastHLine(0, 30, 320, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(0, 30, 160, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(160, 30, 160, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(45, 120);
+      M5.Lcd.printf("Touch"); 
+      M5.Lcd.setCursor(194, 120);
+      M5.Lcd.printf("Marker");
+      break;
+
+//Status_Codec
+    case 1130:
+      M5.Lcd.drawFastVLine(160, 30, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawFastHLine(0, 30, 320, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(0, 30, 160, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(160, 30, 160, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(20, 120);
+      M5.Lcd.printf("%d", total_count_1);  
+      M5.Lcd.setCursor(195, 120);
+      M5.Lcd.printf("%d", total_count_2);
+      break;
+  
+
+//Control
+    case 120:
+      break;
+
+
+    
+//Params
+    case 130:
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(20, 90);
+      M5.Lcd.printf("altitude: %3.1f", climber_altitude);
+      M5.Lcd.setCursor(20, 140);
+      M5.Lcd.printf("velocity: %2.2f", climber_velocity); 
+      break;
+
+
+
+   // case 21:
       // Refresh Display
       //M5.Lcd.setTextColor(CYAN,BLACK);
       //M5.Lcd.setCursor(10, 10);
@@ -761,7 +958,7 @@ void lcdDisplay(void) {
       //M5.Lcd.printf("PITCH: %3f", pitch);
       //M5.Lcd.setCursor(10, 160);
       //M5.Lcd.printf("ROLL: %3f", roll);
-      break;
+      //break;
     }
     lcd_flag = false;
   }
@@ -773,15 +970,54 @@ void buttonAction(void){
   M5.update();
   if (M5.BtnA.wasPressed()) {
     if( pattern == 0 ) {
-      pattern = 11;
+      M5.lcd.clear();
+      if( lcd_pattern >= 110 && lcd_pattern < 1000 ){
+        lcd_pattern = 10;
+      }
+      if( lcd_pattern >= 1110 && lcd_pattern < 2000 ){
+        lcd_pattern = 110;
+      }
+        
     }
   } else if (M5.BtnB.wasPressed()) {
+    M5.lcd.clear();
+    switch (lcd_pattern){
+      case 11:
+        lcd_pattern = 110;
+        break;
+
+      case 111:
+        lcd_pattern = 1110;
+        break;
+
+      case 112:
+        lcd_pattern = 1120;
+        break;
+
+      case 113:
+        lcd_pattern = 1130;
+        break;
+
+      case 13:
+        lcd_pattern = 130;
+        break;
+
+    }
   } else if (M5.BtnC.wasPressed()) {
     M5.lcd.clear();
     if( lcd_pattern >= 10  && lcd_pattern < 20 ){
       lcd_back = 0;
       lcd_pattern++;
       if( lcd_pattern > 13 ) lcd_pattern = 11; 
+    }
+    if( lcd_pattern >= 110  &&  lcd_pattern < 120){
+      lcd_back = 0;
+      lcd_pattern++;
+      if( lcd_pattern > 113 ) lcd_pattern = 111;
+    }
+    if( lcd_pattern >= 1110  &&  lcd_pattern < 1120){
+      lcd_back = 0;
+      if( lcd_pattern > 1112 ) lcd_pattern = 1111;
     }
 
 
