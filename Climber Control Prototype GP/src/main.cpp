@@ -30,6 +30,14 @@
 #define PCNT_H_LIM_VAL  10000               // Counter Limit H
 #define PCNT_L_LIM_VAL -10000               // Counter Limit L 
 
+#define BRAKE_THRESHOLD_VELOCITY 1          // 1m/s
+
+#define DRIVER_ROLLER_PERIMETER 283         //mm
+#define IDLER_ROLLER_PERIMETER 94.25        //mm
+
+#define DRIVER_ROLLER_PPR 2000
+#define IDLER_ROLLER_PPR 400
+
 //Global
 //------------------------------------------------------------------//
 
@@ -95,6 +103,7 @@ unsigned char se_pattern;
 unsigned char re_pattern;
 float re_val;
 int sleep_flag;
+
 
 
 
@@ -180,8 +189,9 @@ void loop() {
   timerInterrupt();
 
   switch (pattern) {
-  case 0:    
-    esc.write(0);
+  case 0: 
+    power = 0;   
+    esc.write( power);
     lcdDisplay();
     buttonAction();
     break;  
@@ -198,7 +208,11 @@ void loop() {
 
   case 21: 
     esc.write(power);
+<<<<<<< HEAD
+    if(  travel_1 >= target_travel - braking_distance || travel_2 >= target_travel - braking_distance ) {
+=======
     if( travel_1 >= target_travel || travel_2 >= target_travel ) {
+>>>>>>> 3970e077e1d244a05a5bc03e9abd73443caf6e22
       time_buff = millis();   
       pattern = 31;
       break;
@@ -206,24 +220,26 @@ void loop() {
     break;
 
   case 31:
-    lcdDisplay();
-    power = 0;
     esc.write(power);
-    if( millis() - time_buff >= 5000 ) {
-      pattern = 0;
+    if( power <= 0 ) {
+      pattern = 32;
       break;
     }
     break;
 
-case 41:
-    lcdDisplay();
-    power = 0;
+  case 32:
+    power = 0;   
     esc.write(power);                          
-    if( millis() - time_buff >= 5000 ) {
-      pattern = 0;
+    if( velocity_1 < BRAKE_THRESHOLD_VELOCITY || velocity_2 < BRAKE_THRESHOLD_VELOCITY ) {
+      pattern = 41;
       break;
     }
     break;
+
+  case 41:
+    pattern = 0;
+    break;
+  
 
 
 
@@ -246,11 +262,14 @@ void timerInterrupt(void) {
     pcnt_get_counter_value(PCNT_UNIT_0, &delta_count_1);
     pcnt_counter_clear(PCNT_UNIT_0);  
     total_count_1 += delta_count_1;
-
+    velocity_1 = delta_count_1 * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR / 1000;
+    travel_1 = total_count_1 * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR / 1000;
 
     pcnt_get_counter_value(PCNT_UNIT_1, &delta_count_2);
     pcnt_counter_clear(PCNT_UNIT_1);  
     total_count_2 += delta_count_2;
+    velocity_2 = delta_count_2 * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR / 1000;
+    travel_2 = total_count_2 * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR / 1000;
 
     lcd_back += 1;
     M5.Lcd.setCursor(0, 0);
