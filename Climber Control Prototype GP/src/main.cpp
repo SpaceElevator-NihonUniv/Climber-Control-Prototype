@@ -198,7 +198,7 @@ void loop() {
 
   case 21: 
     esc.write(power);
-    if(  travel_1 >= target_travel -   || travel_2 >= target_travel ) {
+    if( travel_1 >= target_travel || travel_2 >= target_travel ) {
       time_buff = millis();   
       pattern = 31;
       break;
