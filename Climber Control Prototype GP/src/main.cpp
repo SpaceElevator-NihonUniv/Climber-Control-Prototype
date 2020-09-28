@@ -208,12 +208,7 @@ void loop() {
 
   case 21: 
     esc.write(power);
-<<<<<<< HEAD
     if(  travel_1 >= target_travel - braking_distance || travel_2 >= target_travel - braking_distance ) {
-=======
-    if( travel_1 >= target_travel || travel_2 >= target_travel ) {
->>>>>>> 3970e077e1d244a05a5bc03e9abd73443caf6e22
-      time_buff = millis();   
       pattern = 31;
       break;
     }
@@ -727,13 +722,13 @@ void lcdDisplay(void) {
       M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
       M5.Lcd.drawJpgFile(SD, "/icon/status.jpg", 14, 78);
       M5.Lcd.drawJpgFile(SD, "/icon/control.jpg", 120, 78);
-      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 238, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 234, 78);
       M5.Lcd.setTextColor(CYAN,BLACK);
       M5.Lcd.setCursor(14, 170);
       M5.Lcd.printf("Status"); 
       M5.Lcd.setCursor(120, 170);
       M5.Lcd.printf("Control");  
-      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.setCursor(234, 170);
       M5.Lcd.printf("Params");  
 
      //M5.Lcd.drawJpgFile(SD, "/icon/icons8-sd.jpg", 280,  0);
@@ -758,13 +753,13 @@ void lcdDisplay(void) {
       M5.Lcd.fillRect(0, 238, 106, 2, ORANGE);
       M5.Lcd.drawJpgFile(SD, "/icon/status.jpg", 14, 78);
       M5.Lcd.drawJpgFile(SD, "/icon/control.jpg", 120, 78);
-      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 238, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 234, 78);
       M5.Lcd.setTextColor(CYAN,BLACK);
       M5.Lcd.setCursor(14, 170);
       M5.Lcd.printf("Status"); 
       M5.Lcd.setCursor(120, 170);
       M5.Lcd.printf("Control");  
-      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.setCursor(234, 170);
       M5.Lcd.printf("Params");
       break;
 
@@ -781,13 +776,13 @@ void lcdDisplay(void) {
       M5.Lcd.fillRect(105, 238, 108, 2, ORANGE);
       M5.Lcd.drawJpgFile(SD, "/icon/status.jpg", 14, 78);
       M5.Lcd.drawJpgFile(SD, "/icon/control.jpg", 120, 78);
-      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 238, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 234, 78);
       M5.Lcd.setTextColor(CYAN,BLACK);
       M5.Lcd.setCursor(14, 170);
       M5.Lcd.printf("Status"); 
       M5.Lcd.setCursor(120, 170);
       M5.Lcd.printf("Control");  
-      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.setCursor(234, 170);
       M5.Lcd.printf("Params");
       break;
 
@@ -804,13 +799,13 @@ void lcdDisplay(void) {
       M5.Lcd.fillRect(213, 238, 106, 2, ORANGE);
       M5.Lcd.drawJpgFile(SD, "/icon/status.jpg", 14, 78);
       M5.Lcd.drawJpgFile(SD, "/icon/control.jpg", 120, 78);
-      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 238, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/params.jpg", 234, 78);
       M5.Lcd.setTextColor(CYAN,BLACK);
       M5.Lcd.setCursor(14, 170);
       M5.Lcd.printf("Status"); 
       M5.Lcd.setCursor(120, 170);
       M5.Lcd.printf("Control");  
-      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.setCursor(234, 170);
       M5.Lcd.printf("Params");
       break;
 
@@ -938,10 +933,14 @@ void lcdDisplay(void) {
       M5.Lcd.drawRect(0, 30, 160, 210, M5.Lcd.color565(50,50,50));
       M5.Lcd.drawRect(160, 30, 160, 210, M5.Lcd.color565(50,50,50));
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(20, 120);
-      M5.Lcd.printf("%d", total_count_1);  
-      M5.Lcd.setCursor(195, 120);
-      M5.Lcd.printf("%d", total_count_2);
+      M5.Lcd.setCursor(30, 50);
+      M5.Lcd.printf("travel_1");
+      M5.Lcd.setCursor(50, 90);
+      M5.Lcd.printf("%5.2f", travel_1); 
+      M5.Lcd.setCursor(30, 155);
+      M5.Lcd.printf("velocity_1");
+      M5.Lcd.setCursor(60, 190);
+      M5.Lcd.printf("%4.2f", velocity_1);
       break;
   
 
