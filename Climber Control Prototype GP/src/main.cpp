@@ -15,6 +15,7 @@
 #include <M5Stack.h>
 #include <Servo.h>
 #include "driver/pcnt.h"
+#include <EEPROM.h>
 
 
 //Define
@@ -32,7 +33,7 @@
 
 #define BRAKE_THRESHOLD_VELOCITY 1          // 1m/s
 
-#define DRIVER_ROLLER_PERIMETER 283         //mm
+#define DRIVER_ROLLER_PERIMETER 283.00         //mm
 #define IDLER_ROLLER_PERIMETER 94.25        //mm
 
 #define DRIVER_ROLLER_PPR 2000
@@ -90,8 +91,13 @@ int lcd_pattern = 10;
 uint16_t lcd_back = 0;
 
 char motor_output;
-float climber_altitude;
-float climber_velocity;
+unsigned int climb_height;
+unsigned int climb_velocity;
+unsigned int desend_velocity;
+unsigned int climber_accel;
+char starting_count;
+char stop_wait;
+
 float slip_rate=4.3;
 float battery_voltage=26.0;
 
@@ -144,6 +150,8 @@ void lcdDisplay(void);
 void velocityControl(int object_count);
 void xbee_re(void);
 void xbee_se(void);
+void eeprom_write(void);
+void eeprom_read(void);
 
 //Setup
 //------------------------------------------------------------------//
@@ -167,6 +175,10 @@ void setup() {
   // Initialize MPU
   M5.IMU.Init();
   Serial.begin(115200);
+  EEPROM.begin(128);
+  delay(10);
+  eeprom_read();
+
 
   esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
   esc.write(0);
@@ -240,8 +252,8 @@ void loop() {
 
 
   }
-  //xbee_re();
-  //xbee_se();
+  xbee_re();
+  xbee_se();
    
 }
 
@@ -311,8 +323,8 @@ void timerInterrupt(void) {
         Serial.printf("%3.2f, ",(float)millis()/1000);
         Serial.printf("%3d, "  ,pattern);
         Serial.printf("%3d, "  ,motor_output);
-        Serial.printf("%3.1f, ",climber_altitude);
-        Serial.printf("%2.2f, ",climber_velocity);
+        Serial.printf("%3.1f, ",climb_height);
+        Serial.printf("%2.2f, ",climb_velocity);
         Serial.printf("%2.2f, ",slip_rate);
         Serial.printf("%2.2f, ",battery_voltage);
         Serial.printf("%5d, "  ,micros_time);
@@ -341,7 +353,7 @@ void timerInterrupt(void) {
   }
 }
 
-//XBee Re
+//XBee Receive
 //------------------------------------------------------------------//
 void xbee_re(void){
 
@@ -359,9 +371,9 @@ void xbee_re(void){
       Serial.printf("\n\n");
       if(se_pattern == 0){
         re_pattern = atoi(xbee_re_buffer);
-      }/*else if(se_pattern == 2){
+      }else if(se_pattern == 2){
         re_val = atof(xbee_re_buffer);
-      }*/
+      }
       xbee_index = 0;
 
       switch(re_pattern){
@@ -387,7 +399,8 @@ void xbee_re(void){
         re_pattern = 41;
         break;
       case 41:
-        motor_output = re_val;
+        climb_height = re_val;
+        eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
         break;
@@ -397,7 +410,8 @@ void xbee_re(void){
         re_pattern = 42;
         break;
       case 42:
-        climber_altitude = re_val;
+        climb_velocity = re_val;
+        eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
         break;
@@ -407,7 +421,8 @@ void xbee_re(void){
         re_pattern = 43;
         break;
       case 43:
-        climber_velocity = re_val;
+        desend_velocity = re_val;
+        eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
         break;
@@ -417,7 +432,8 @@ void xbee_re(void){
         re_pattern = 44;
         break;
       case 44:
-        slip_rate = re_val;
+        climber_accel = re_val;
+        eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
         break;
@@ -427,7 +443,8 @@ void xbee_re(void){
         re_pattern = 45;
         break;
       case 45:
-        battery_voltage = re_val;
+        starting_count = re_val;
+        eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
         break;
@@ -437,17 +454,8 @@ void xbee_re(void){
         re_pattern = 46;
         break;
       case 46:
-        micros_time = re_val;
-        se_pattern = 1;
-        re_pattern = 0;
-        break;
-
-      case 37:
-        se_pattern = 37;
-        re_pattern = 47;
-        break;
-      case 47:
-        pitch = re_val;
+        stop_wait = re_val;
+        eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
         break;
@@ -516,20 +524,19 @@ void xbee_se(void){
     Serial.printf("\n");
     Serial.printf(" 11 : Start Seqwnse\n");
     Serial.printf("\n");
-    Serial.printf(" 31 :  Motor Output     [%3d]\n " ,motor_output);
-    Serial.printf(" 32 :  Climber Altitude [%3.1f]\n ",climber_altitude);
-    Serial.printf(" 33 :  Climber Velocity [%2.2f]\n ",climber_velocity);
-    Serial.printf(" 34 :  Slip  Rate       [%2.2f]\n ",slip_rate);
-    Serial.printf(" 35 :  Battery Voltage  [%2.2f]\n ",battery_voltage);
-    Serial.printf(" 36 :  Micros  Time     [%5d]\n"  ,micros_time);
-    Serial.printf(" 37 :  Pitch            [%5f]\n "  ,pitch);
+    Serial.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
+    Serial.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
+    Serial.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
+    Serial.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
+    Serial.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
+    Serial.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
     Serial.printf("\n");
     Serial.printf(" T : Terementry\n");
     Serial.printf(" U : Manual  Climb\n");
     Serial.printf(" D : Manual  Desvent\n");
 
     Serial.printf("\n");
-    Serial.printf(" Please  enter 11 35 ");
+    Serial.printf(" Please  enter 11 36 ");
 
     se_pattern = 0;
     break;
@@ -541,45 +548,50 @@ void xbee_se(void){
   case 11:
     Serial.printf("\n Check Current Paramenters\n");
     Serial.printf("\n");
-    Serial.printf(" Motor Output     [%3d]\n   " ,motor_output);
-    Serial.printf(" Climber Altitude [%3.1f]\n ",climber_altitude);
-    Serial.printf(" Climber Velocity [%2.2f]\n ",climber_velocity);
-    Serial.printf(" Slip  Rate       [%2.2f]\n ",slip_rate);
-    Serial.printf(" Battery Voltage  [%2.2f]\n ",battery_voltage);
-    Serial.printf(" Micros  Time     [%5d]\n   "  ,micros_time);
-    Serial.printf(" Pitch            [%5f]\n   "  ,pitch);
+    Serial.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
+    Serial.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
+    Serial.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
+    Serial.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
+    Serial.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
+    Serial.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
     Serial.printf("\n");
     Serial.printf(" Confilm to Climb? ->  ");
     se_pattern  = 2;
     break;
 
   case 31:
-     Serial.printf(" Motor Output [%3d]\n " ,motor_output);
+     Serial.printf(" Climb Height [%3d]\n " ,climb_height);
      Serial.printf(" Please enter 0 to 4000 -> ");
      se_pattern = 2;
      break;
 
   case 32:
-      Serial.printf(" Climber Altitude [%3.1f]\n ",climber_altitude);
-      Serial.printf(" Please enter 0.0 to 1000 -> ");
+      Serial.printf(" Climb Velocity [%4d]\n ",climb_velocity);
+      Serial.printf(" Please enter 0 to 50 -> ");
       se_pattern = 2;
       break;
 
   case 33:
-      Serial.printf(" Climber Velocity [%2.2f]\n ",climber_velocity);
-      Serial.printf(" Please enter 0.00 to 50 -> ");
+      Serial.printf(" Desend Velocity [%4d]\n ",desend_velocity);
+      Serial.printf(" Please enter 0 to 50 -> ");
       se_pattern = 2;
       break;
     
   case 34:
-      Serial.printf(" Slip  Rate [%2.2f]\n ",slip_rate);
-      Serial.printf(" Please enter 0.00 to 50 -> ");
+      Serial.printf(" Climber Accel [%4d]\n ",climber_accel);
+      Serial.printf(" Please enter 0 to 50 -> ");
       se_pattern = 2;
       break;
 
   case 35:
-      Serial.printf(" Battery Voltage [%2.2f]\n ",battery_voltage);
-      Serial.printf(" Please enter 0.00 to 50 -> ");
+      Serial.printf(" Starting Count [%2d]\n ",starting_count);
+      Serial.printf(" Please enter 0 to 60 -> ");
+      se_pattern = 2;
+      break;
+
+  case 36:
+      Serial.printf(" Stop Wait [%2d]\n ",stop_wait);
+      Serial.printf(" Please enter 0 to 60 -> ");
       se_pattern = 2;
       break;
 
@@ -591,13 +603,12 @@ void xbee_se(void){
   case 201:
     Serial.printf("\n Check Current Paramenters\n");
     Serial.printf("\n");
-    Serial.printf(" Motor Output     [%3d]\n " ,motor_output);
-    Serial.printf(" Climber Altitude [%3.1f]\n ",climber_altitude);
-    Serial.printf(" Climber Velocity [%2.2f]\n ",climber_velocity);
-    Serial.printf(" Slip  Rate       [%2.2f]\n ",slip_rate);
-    Serial.printf(" Battery Voltage  [%2.2f]\n ",battery_voltage);
-    Serial.printf(" Micros  Time     [%5d]\n"  ,micros_time);
-    Serial.printf(" Pitch            [%5f]\n "  ,pitch);
+    Serial.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
+    Serial.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
+    Serial.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
+    Serial.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
+    Serial.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
+    Serial.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
     Serial.printf("\n");
     Serial.printf(" Confilm to Climb? ->  ");
     se_pattern  = 2;
@@ -606,13 +617,12 @@ void xbee_se(void){
   case 211:
     Serial.printf("\n Check Current Paramenters\n");
     Serial.printf("\n");
-    Serial.printf(" Motor Output     [%3d]\n " ,motor_output);
-    Serial.printf(" Climber Altitude [%3.1f]\n ",climber_altitude);
-    Serial.printf(" Climber Velocity [%2.2f]\n ",climber_velocity);
-    Serial.printf(" Slip  Rate       [%2.2f]\n ",slip_rate);
-    Serial.printf(" Battery Voltage  [%2.2f]\n ",battery_voltage);
-    Serial.printf(" Micros  Time     [%5d]\n"  ,micros_time);
-    Serial.printf(" Pitch            [%5f]\n "  ,pitch);
+    Serial.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
+    Serial.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
+    Serial.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
+    Serial.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
+    Serial.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
+    Serial.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
     Serial.printf("\n");
     Serial.printf(" Confilm to Climb? ->  ");
     se_pattern  = 2;
@@ -819,11 +829,11 @@ void lcdDisplay(void) {
       M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
       M5.Lcd.drawJpgFile(SD, "/icon/brake.jpg", 14, 78);
       M5.Lcd.drawJpgFile(SD, "/icon/sensor.jpg", 120, 78);
-      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 238, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 228, 78);
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.setCursor(24, 170);
       M5.Lcd.printf("Brake"); 
-      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.setCursor(125, 170);
       M5.Lcd.printf("Sensor");  
       M5.Lcd.setCursor(238, 170);
       M5.Lcd.printf("Codec");
@@ -842,11 +852,11 @@ void lcdDisplay(void) {
       M5.Lcd.fillRect(0, 238, 106, 2, ORANGE);
       M5.Lcd.drawJpgFile(SD, "/icon/brake.jpg", 14, 78);
       M5.Lcd.drawJpgFile(SD, "/icon/sensor.jpg", 120, 78);
-      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 238, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 228, 78);
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.setCursor(24, 170);
       M5.Lcd.printf("Brake"); 
-      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.setCursor(125, 170);
       M5.Lcd.printf("Sensor");  
       M5.Lcd.setCursor(238, 170);
       M5.Lcd.printf("Codec");
@@ -865,11 +875,11 @@ void lcdDisplay(void) {
       M5.Lcd.fillRect(105, 238, 108, 2, ORANGE);
       M5.Lcd.drawJpgFile(SD, "/icon/brake.jpg", 14, 78);
       M5.Lcd.drawJpgFile(SD, "/icon/sensor.jpg", 120, 78);
-      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 238, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 228, 78);
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.setCursor(24, 170);
       M5.Lcd.printf("Brake"); 
-      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.setCursor(125, 170);
       M5.Lcd.printf("Sensor");  
       M5.Lcd.setCursor(238, 170);
       M5.Lcd.printf("Codec");
@@ -888,11 +898,11 @@ void lcdDisplay(void) {
       M5.Lcd.fillRect(213, 238, 106, 2, ORANGE);
       M5.Lcd.drawJpgFile(SD, "/icon/brake.jpg", 14, 78);
       M5.Lcd.drawJpgFile(SD, "/icon/sensor.jpg", 120, 78);
-      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 238, 78);
+      M5.Lcd.drawJpgFile(SD, "/icon/codec.jpg", 228, 78);
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.setCursor(24, 170);
       M5.Lcd.printf("Brake"); 
-      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.setCursor(125, 170);
       M5.Lcd.printf("Sensor");  
       M5.Lcd.setCursor(238, 170);
       M5.Lcd.printf("Codec");
@@ -915,15 +925,19 @@ void lcdDisplay(void) {
 
 //Status_Sensor
     case 1120:
-      M5.Lcd.drawFastVLine(160, 30, 210, M5.Lcd.color565(50,50,50));
-      M5.Lcd.drawFastHLine(0, 30, 320, M5.Lcd.color565(50,50,50));
-      M5.Lcd.drawRect(0, 30, 160, 210, M5.Lcd.color565(50,50,50));
-      M5.Lcd.drawRect(160, 30, 160, 210, M5.Lcd.color565(50,50,50));
+    M5.Lcd.drawFastVLine(106, 30, 210,  M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawFastVLine(214, 30, 210,  M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawFastHLine(0, 30, 320,  M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(0, 30, 106, 210,  M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(106, 30, 108, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(214, 30, 106, 210,  M5.Lcd.color565(50,50,50));
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(45, 120);
+      M5.Lcd.setCursor(14, 170);
       M5.Lcd.printf("Touch"); 
-      M5.Lcd.setCursor(194, 120);
-      M5.Lcd.printf("Marker");
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Marker");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Press");
       break;
 
 //Status_Codec
@@ -941,6 +955,14 @@ void lcdDisplay(void) {
       M5.Lcd.printf("velocity_1");
       M5.Lcd.setCursor(60, 190);
       M5.Lcd.printf("%4.2f", velocity_1);
+      M5.Lcd.setCursor(190, 50);
+      M5.Lcd.printf("travel_2");
+      M5.Lcd.setCursor(210, 90);
+      M5.Lcd.printf("%5.2f", travel_2); 
+      M5.Lcd.setCursor(190, 155);
+      M5.Lcd.printf("velocity_2");
+      M5.Lcd.setCursor(220, 190);
+      M5.Lcd.printf("%4.2f", velocity_2);
       break;
   
 
@@ -954,9 +976,9 @@ void lcdDisplay(void) {
     case 130:
       M5.Lcd.setTextColor(CYAN,BLACK);
       M5.Lcd.setCursor(20, 90);
-      M5.Lcd.printf("altitude: %3.1f", climber_altitude);
+      M5.Lcd.printf("altitude: %3.1f", climb_height);
       M5.Lcd.setCursor(20, 140);
-      M5.Lcd.printf("velocity: %2.2f", climber_velocity); 
+      M5.Lcd.printf("velocity: %2.2f", climb_velocity); 
       break;
 
 
@@ -1040,6 +1062,44 @@ void buttonAction(void){
 
 
   }
+}
+
+// EEPROM Write
+//------------------------------------------------------------------//
+void eeprom_write(void){
+    EEPROM.write(0,  (climb_height & 0xFF));
+    EEPROM.write(1,  (climb_height>>8 & 0xFF));
+    EEPROM.write(2,  (climb_height>>16 & 0xFF));
+    EEPROM.write(3,  (climb_height>>24 & 0xFF));
+    EEPROM.write(4,  (climb_velocity & 0xFF));
+    EEPROM.write(5,  (climb_velocity>>8 & 0xFF));
+    EEPROM.write(6,  (climb_velocity>>16 & 0xFF));
+    EEPROM.write(7,  (climb_velocity>>24 & 0xFF));
+    EEPROM.write(8,  (desend_velocity & 0xFF));
+    EEPROM.write(9,  (desend_velocity>>8 & 0xFF));
+    EEPROM.write(10, (desend_velocity>>16 & 0xFF));
+    EEPROM.write(11, (desend_velocity>>24 & 0xFF));
+    EEPROM.write(12, (climber_accel & 0xFF));
+    EEPROM.write(13, (climber_accel>>8 & 0xFF));
+    EEPROM.write(14, (climber_accel>>16 & 0xFF));
+    EEPROM.write(15, (climber_accel>>24 & 0xFF));
+    EEPROM.write(16, starting_count);
+    EEPROM.write(17, stop_wait);
+    delay(10);
+    EEPROM.commit();
+    delay(10);
+}
+
+//EEPROM read
+//------------------------------------------------------------------//
+void eeprom_read(void){
+    climb_height = EEPROM.read(0) + (EEPROM.read(1)<<8) + (EEPROM.read(2)<<16) + (EEPROM.read(3)<<24);
+    climb_velocity = EEPROM.read(4) + (EEPROM.read(5)<<8) + (EEPROM.read(6)<<16) + (EEPROM.read(7)<<24);
+    desend_velocity = EEPROM.read(8) + (EEPROM.read(9)<<8) + (EEPROM.read(10)<<16) + (EEPROM.read(11)<<24);
+    climber_accel = EEPROM.read(12) + (EEPROM.read(13)<<8) + (EEPROM.read(14)<<16) + (EEPROM.read(15)<<24);
+    starting_count = EEPROM.read(16);
+    stop_wait = EEPROM.read(17);
+    delay(10);
 }
 
 // IRAM
