@@ -137,6 +137,13 @@ float yaw_buff;
 unsigned int target_travel = 15;
 unsigned int target_velocity = 9;
 
+//RSSI
+const int rssiPin = 34;
+unsigned int rssi_width;
+int rssi_value;
+bool commu_loss_flag = false;
+unsigned char commu_loss_cnt = 0;
+
 
 
 //Prototype
@@ -180,7 +187,7 @@ void setup() {
   eeprom_read();
 
 
-  esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 1100, 1940);
+  esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 900, 1940);
   esc.write(0);
 
   sd_insert = SD.begin(TFCARD_CS_PIN, SPI,  24000000);
@@ -311,18 +318,38 @@ void timerInterrupt(void) {
       if(se_pattern ==  101 ){
         Serial2.printf("%3.2f, ",(float)millis()/1000);
         Serial2.printf("%3d, "  ,pattern);
-        Serial2.printf("%3d, "  ,motor_output);
+        Serial2.printf("%3d, "  ,power);
         Serial2.printf("%3.1f, ",climb_height);
-        Serial2.printf("%2.2f, ",climb_velocity);
-        Serial2.printf("%2.2f, ",slip_rate);
+        Serial2.printf("%4.2f, ",climb_velocity);
+        Serial2.printf("%5.2f, ",travel_1);
+        Serial2.printf("%5.2f, ",travel_2);
         Serial2.printf("%2.2f, ",battery_voltage);
-        Serial2.printf("%5d, "  ,micros_time);
-        Serial2.printf("%5f, "  ,pitch);
+        Serial2.printf("%5d, "  ,rssi_value);
         Serial2.printf("\n");
       }
       break;
     case 30:
+      rssi_width = pulseIn(rssiPin, HIGH, 100);
+      if( rssi_width == 0 ) {
+        if( digitalRead(rssiPin) ) {
+          rssi_value = -57;
+        } else {
+          rssi_value = 0;
+        }
+      } else {
+        rssi_value = rssi_width * 1.3814 - 117;
+      }
+      if( rssi_value < -90 ) {
+        commu_loss_cnt++;
+        if(commu_loss_cnt>=5) {
+          commu_loss_flag = true;
+        } else {
+          commu_loss_flag = false;
+          commu_loss_cnt = 0;
+        }
+      }
      break;
+
     case 50:
       if( lcd_pattern > 10 && lcd_pattern < 20 && lcd_back > 2000 ) {
         M5.lcd.clear();
@@ -372,7 +399,7 @@ void xbee_re(void){
         break;
       case 21:
         if(re_val == 1){
-          pattern = 101;
+          pattern = 11;
         } else {
           re_pattern = 1;
         }
