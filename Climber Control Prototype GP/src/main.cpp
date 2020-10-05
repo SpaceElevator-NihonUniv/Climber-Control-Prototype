@@ -110,10 +110,6 @@ unsigned char re_pattern;
 float re_val;
 int sleep_flag;
 
-
-
-
-
 // MPU
 float accX = 0.0F;
 float accY = 0.0F;
@@ -132,6 +128,18 @@ float temp = 0.0F;
 float pitch_buff;
 float roll_buff;
 float yaw_buff;
+
+//RS405CB
+unsigned char sendbuf[32];
+unsigned char readbuf[32];
+const int txden = 15;
+int servo_angle_buff = 0;
+float servo_angle = 0.0F;
+int servo_torque_buff = 0;
+float servo_torque = 0.0F;
+int servo_temp = 0;
+int servo_voltage_buff = 0;
+float servo_voltage = 0.00F;
 
 // Paramenters
 unsigned int target_travel = 15;
@@ -159,12 +167,16 @@ void xbee_re(void);
 void xbee_se(void);
 void eeprom_write(void);
 void eeprom_read(void);
+void move(int sPos, int sTime);
+void torque(int sMode);
+void getServoStatus(void);
+
 
 //Setup
 //------------------------------------------------------------------//
 void setup() {
 
-  M5.begin();
+  M5.begin(1, 1, 1, 1);
   // Initialize Timer Interrupt
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &onTimer, true);
@@ -175,12 +187,22 @@ void setup() {
 
   M5.Lcd.setTextSize(2);
 
+  pinMode(rssiPin, INPUT);  
+
   // Initialize IIC
   Wire.begin();
   Wire.setClock(400000);
 
   // Initialize MPU
   //M5.IMU.Init();
+
+  //Serial.begin(115200);
+  // Servo Torque
+  pinMode(txden, OUTPUT);  
+  digitalWrite(txden, LOW);
+  delay(1000);
+  torque(1);
+
   Serial2.begin(115200);
   EEPROM.begin(128);
   delay(10);
@@ -206,6 +228,7 @@ void loop() {
   timerInterrupt();  
   xbee_re();
   xbee_se();
+ 
 
   switch (pattern) {
   case 0: 
@@ -282,7 +305,7 @@ void timerInterrupt(void) {
 
     //10ms timerInterrupt
     switch(iTimer10){
-    case 1:
+    case 1:      
       break;
     case 2:
       //M5.IMU.getGyroData(&gyroX,&gyroY,&gyroZ);
@@ -312,6 +335,7 @@ void timerInterrupt(void) {
     //50ms timerInterrupt
     switch (iTimer50) {
     case 10:
+      move(-500, 100);
       if(pattern == 11 && (power < 100)) power++;
       break;
     case 20:
@@ -323,8 +347,12 @@ void timerInterrupt(void) {
         Serial2.printf("%4.2f, ",climb_velocity);
         Serial2.printf("%5.2f, ",travel_1);
         Serial2.printf("%5.2f, ",travel_2);
-        Serial2.printf("%2.2f, ",battery_voltage);
+        Serial2.printf("%2d, ",rssi_width);
         Serial2.printf("%5d, "  ,rssi_value);
+        Serial2.printf("%5.1f, "  ,servo_angle);
+        Serial2.printf("%5.3f, "  ,servo_torque);
+        Serial2.printf("%5d, "  ,servo_temp);
+        Serial2.printf("%5.2f, "  ,servo_voltage);
         Serial2.printf("\n");
       }
       break;
@@ -338,17 +366,21 @@ void timerInterrupt(void) {
         }
       } else {
         rssi_value = rssi_width * 1.3814 - 117;
-      }
+      }      
       if( rssi_value < -90 ) {
         commu_loss_cnt++;
         if(commu_loss_cnt>=5) {
           commu_loss_flag = true;
-        } else {
-          commu_loss_flag = false;
-          commu_loss_cnt = 0;
-        }
+        } 
+      } else {
+        commu_loss_flag = false;
+        commu_loss_cnt = 0;
       }
      break;
+    
+    case 40:   
+      getServoStatus();   
+      break;
 
     case 50:
       if( lcd_pattern > 10 && lcd_pattern < 20 && lcd_back > 2000 ) {
@@ -641,20 +673,106 @@ void xbee_se(void){
     break;
   }
 }
+
+// RS405CB move
 //------------------------------------------------------------------//
+void move(int sPos, int sTime) {
+  unsigned char sum;
 
-/*void velocityControl(int object_count) {
-  int i, j;
-  err = delta_count - object_count;
-  i = err * kp;
-  j = (err_buff - err)*kd;
-  power = (i - j)/3;
+  sendbuf[0] = (unsigned char) 0xFA;  // Hdr1
+  sendbuf[1] = (unsigned char) 0xAF;  // Hdr2
+  sendbuf[2] = (unsigned char) 1;     // ID
+  sendbuf[3] = (unsigned char) 0x00;  // Flag
+  sendbuf[4] = (unsigned char) 0x1E;  // Addr(0x1E=30)
+  sendbuf[5] = (unsigned char) 0x04;  // Length(4byte)
+  sendbuf[6] = (unsigned char) 0x01;  // Number
+  sendbuf[7] = (unsigned char) (sPos & 0x00FF); // Position
+  sendbuf[8] = (unsigned char) ((sPos & 0xFF00) >> 8); // Position
+  sendbuf[9] = (unsigned char) (sTime & 0x00FF); // Time
+  sendbuf[10] = (unsigned char) ((sTime & 0xFF00) >> 8); // Time
+
+  // Caluculate check SUM
+  sum = sendbuf[2];
+  for (int i = 3; i < 11; i++) {
+    sum = (unsigned char)(sum ^ sendbuf[i]);
+  }
+  sendbuf[11] = sum;
+
+  // Transmit
+  digitalWrite(txden, HIGH);
+  Serial.write(sendbuf, 12); 
+  delayMicroseconds(1200);
+  digitalWrite(txden,LOW);
+}
+
+// RS405CB torque
+//------------------------------------------------------------------//
+void torque(int sMode) {
+  unsigned char sum;
+
+  sendbuf[0] = (unsigned char) (0xFA);  // Hdr1
+  sendbuf[1] = (unsigned char) (0xAF);  // Hdr2
+  sendbuf[2] = (unsigned char) (1);   // ID
+  sendbuf[3] = (unsigned char) (0x00);  // Flag
+  sendbuf[4] = (unsigned char) (0x24);  // Addr(0x24=36)
+  sendbuf[5] = (unsigned char) (0x01);  // Length(1byte)
+  sendbuf[6] = (unsigned char) (0x01);  // Number
+  sendbuf[7] = (unsigned char)((sMode&0x00FF)); // ON/OFFフラグ
+
+  // Caluculate check SUM
+  sum = sendbuf[2];
+  for (int i = 3; i < 8; i++) {
+    sum = (unsigned char) (sum ^ sendbuf[i]);
+  }
+  sendbuf[8] = sum;
+
+  // Transmit
+  digitalWrite(txden, HIGH);
+  Serial.write(sendbuf, 9);
+  delayMicroseconds(1000);
+  digitalWrite(txden, LOW);
+}
+
+// RS405CB Status
+//------------------------------------------------------------------//
+void getServoStatus(void) {
+  unsigned char sum;
+
+  sendbuf[0] = (unsigned char) 0xFA;  //
+  sendbuf[1] = (unsigned char) 0xAF;  //
+  sendbuf[2] = (unsigned char) 1;     //
+  sendbuf[3] = (unsigned char) 0x09;  //
+  sendbuf[4] = (unsigned char) 0x00;  //
+  sendbuf[5] = (unsigned char) 0x00;  //
+  sendbuf[6] = (unsigned char) 0x01;  //
+
+  sum = sendbuf[2];
+  for (int i = 3; i < 7; i++) {
+    sum = (unsigned char) (sum ^ sendbuf[i]);
+  }
+  sendbuf[7] = sum;
+
+  digitalWrite(txden, HIGH);
+  Serial.write(sendbuf, 8);
+  delayMicroseconds(750);
+  digitalWrite(txden, LOW);
+  for(int i=0;i<26;i++) {
+    readbuf[i] = Serial.read();
+  }
+  servo_angle_buff = ((readbuf[8] << 8) & 0x0000FF00) | (readbuf[7] & 0x000000FF);
+  servo_torque_buff = ((readbuf[14] << 8) & 0x0000FF00) | (readbuf[13] & 0x000000FF);
+  servo_temp = ((readbuf[16] << 8) & 0x0000FF00) | (readbuf[15] & 0x000000FF);
+  servo_voltage_buff = ((readbuf[18] << 8) & 0x0000FF00) | (readbuf[17] & 0x000000FF);
+
+  if(servo_angle_buff < 32768) {
+    servo_angle = servo_angle_buff / 10;
+  } else {
+    servo_angle = (servo_angle_buff - 65535) / 10;
+  }
+  servo_torque = (float)servo_torque_buff / 1000;
+  servo_voltage = servo_voltage_buff / 100;
   
-  err_buff = err;
-  if(power>100) power = 100;
-  if(power<-100) power = -100;
-}*/
-
+}
 
 // Initialize Encoder
 //------------------------------------------------------------------//
@@ -914,7 +1032,7 @@ void lcdDisplay(void) {
       M5.Lcd.setCursor(33, 120);
       M5.Lcd.printf("Temper");  
       M5.Lcd.setCursor(216, 120);
-      M5.Lcd.printf("Incli");
+      M5.Lcd.printf("%d", servo_angle);
       break;
 
     
