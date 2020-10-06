@@ -1039,20 +1039,98 @@ void lcdDisplay(void) {
 
 //Status_Sensor
     case 1120:
-    M5.Lcd.drawFastVLine(106, 30, 210,  M5.Lcd.color565(50,50,50));
-      M5.Lcd.drawFastVLine(214, 30, 210,  M5.Lcd.color565(50,50,50));
-      M5.Lcd.drawFastHLine(0, 30, 320,  M5.Lcd.color565(50,50,50));
-      M5.Lcd.drawRect(0, 30, 106, 210,  M5.Lcd.color565(50,50,50));
-      M5.Lcd.drawRect(106, 30, 108, 210, M5.Lcd.color565(50,50,50));
-      M5.Lcd.drawRect(214, 30, 106, 210,  M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
       M5.Lcd.setTextColor(CYAN,BLACK);
       M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Touch"); 
+      M5.Lcd.printf("Servo"); 
       M5.Lcd.setCursor(120, 170);
       M5.Lcd.printf("Marker");  
       M5.Lcd.setCursor(238, 170);
       M5.Lcd.printf("Press");
       break;
+
+    case 1121:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, ORANGE);
+      M5.Lcd.fillRect(0, 29, 106, 2, ORANGE);
+      M5.Lcd.fillRect(0, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(105, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(0, 238, 106, 2, ORANGE);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Servo"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Marker");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Press");
+
+    case 1122:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, ORANGE);
+      M5.Lcd.fillRect(105, 29, 108, 2, ORANGE);
+      M5.Lcd.fillRect(105, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(213, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(105, 238, 108, 2, ORANGE);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Servo"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Marker");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Press");
+
+    case 1123:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
+      M5.Lcd.drawRect(214, 30, 106, 210, ORANGE);
+      M5.Lcd.fillRect(213, 29, 106, 2, ORANGE);
+      M5.Lcd.fillRect(213, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(318, 29, 2, 210, ORANGE);
+      M5.Lcd.fillRect(213, 238, 106, 2, ORANGE);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Servo"); 
+      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.printf("Marker");  
+      M5.Lcd.setCursor(238, 170);
+      M5.Lcd.printf("Press");
+
+//Status_Sensor_Servo
+    case 11110:
+      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
+      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
+      M5.Lcd.drawRect(0, 30, 160, 105, TFT_WHITE);
+      M5.Lcd.drawRect(160, 30, 160, 105, TFT_WHITE);
+      M5.Lcd.drawRect(0, 135, 160, 105, TFT_WHITE);
+      M5.Lcd.drawRect(160, 135, 160, 105, TFT_WHITE);
+      M5.Lcd.setTextColor(CYAN,BLACK);
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Servo"); 
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Servo"); 
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Servo"); 
+      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.printf("Servo"); 
+      
+
 
 //Status_Codec
     case 1130:
@@ -1128,10 +1206,12 @@ void buttonAction(void){
       if( lcd_pattern >= 110 && lcd_pattern < 1000 ){
         lcd_pattern = 10;
       }
-      if( lcd_pattern >= 1110 && lcd_pattern < 2000 ){
+      if( lcd_pattern >= 1110 && lcd_pattern < 1119 ){
         lcd_pattern = 110;
       }
-        
+      if( lcd_pattern >= 1120 && lcd_pattern < 1129 ){
+        lcd_pattern = 110;
+      }
     }
   } else if (M5.BtnB.wasPressed()) {
     M5.lcd.clear();
@@ -1146,6 +1226,10 @@ void buttonAction(void){
 
       case 112:
         lcd_pattern = 1120;
+        break;
+
+      case 1121:
+        lcd_pattern = 11110;
         break;
 
       case 113:
@@ -1173,7 +1257,10 @@ void buttonAction(void){
       lcd_back = 0;
       if( lcd_pattern > 1112 ) lcd_pattern = 1111;
     }
-
+    if( lcd_pattern >= 1120  &&  lcd_pattern < 1130){
+      lcd_back = 0;
+      if( lcd_pattern > 1123 ) lcd_pattern = 1120;
+    }
 
   }
 }
