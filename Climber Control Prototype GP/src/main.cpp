@@ -13,6 +13,7 @@
 //Include
 //------------------------------------------------------------------//
 #include <M5Stack.h>
+#include <CircularBuffer.h>
 #include <Servo.h>
 #include "driver/pcnt.h"
 #include <EEPROM.h>
@@ -24,8 +25,8 @@
 
 #define ESC_LDEC_CHANNEL 3                  // 50Hz LDEC Timer
 
-#define PULSE_INPUT_PIN_1 25                // Rotaly Encoder Phase A
-#define PULSE_CTRL_PIN_1  26                // REncoder Phase B
+#define PULSE_INPUT_PIN_1 26                // Rotaly Encoder Phase A
+#define PULSE_CTRL_PIN_1  25                // REncoder Phase B
 #define PULSE_INPUT_PIN_2 13                // Rotaly Encoder Phase A
 #define PULSE_CTRL_PIN_2  0                 // Rotaly Encoder Phase B
 #define PCNT_H_LIM_VAL  10000               // Counter Limit H
@@ -39,8 +40,12 @@
 #define DRIVER_ROLLER_PPR 2000
 #define IDLER_ROLLER_PPR 400
 
+#define AVERATING_BUFFER_SIZE 10            // Velocity Averating Buffer Size
+
 //Global
 //------------------------------------------------------------------//
+CircularBuffer<int, AVERATING_BUFFER_SIZE> delta1_buffer;
+CircularBuffer<int, AVERATING_BUFFER_SIZE> delta2_buffer;
 
 // Timer
 hw_timer_t * timer = NULL;
@@ -60,6 +65,7 @@ int16_t delta_count_1 = 0;                    // Delta Counter
 long    total_count_1 = 0;                    // Total Counter
 float   velocity_1;
 float   travel_1;
+int     delta_avg_1 = 0;
 
 int16_t delta_count_1_buff;
 long    total_count_1_buff;
@@ -69,6 +75,7 @@ int16_t delta_count_2 = 0;                    // Delta Counter
 long    total_count_2 = 0;                    // Total Counter
 float   velocity_2;
 float   travel_2;
+int     delta_avg_2 = 0;
 
 int16_t delta_count_2_buff;
 long    total_count_2_buff;
@@ -89,17 +96,12 @@ bool lcd_flag = false;
 bool sd_insert = false;
 int lcd_pattern = 10;
 uint16_t lcd_back = 0;
+uint8_t battery_persent;
 
-char motor_output;
-unsigned int climb_height;
-unsigned int climb_velocity;
-unsigned int desend_velocity;
-unsigned int climber_accel;
-char starting_count;
-char stop_wait;
-
-float slip_rate=4.3;
-float battery_voltage=26.0;
+//Touch Sensor
+static const int touch_upPin = 12;
+static const int touch_downPin = 5;
+bool touch_value = false;
 
 //Timer Interrupt
 char  xbee_re_buffer[16];
@@ -142,8 +144,15 @@ int servo_voltage_buff = 0;
 float servo_voltage = 0.00F;
 
 // Paramenters
-unsigned int target_travel = 15;
-unsigned int target_velocity = 9;
+unsigned int target_travel = 0;
+unsigned int velocity_threshold = 0;
+char motor_output;
+unsigned int climb_height;
+unsigned int climb_velocity;
+unsigned int desend_velocity;
+unsigned int climber_accel;
+char starting_count;
+char stop_wait;
 
 //RSSI
 const int rssiPin = 34;
@@ -156,7 +165,7 @@ unsigned char commu_loss_cnt = 0;
 
 //Prototype
 //------------------------------------------------------------------//
-uint8_t getBatteryGauge(void);
+int8_t getBatteryGauge(void);
 void IRAM_ATTR onTimer(void);
 void timerInterrupt(void);
 void initEncoder(void);
@@ -170,6 +179,9 @@ void eeprom_read(void);
 void move(int sPos, int sTime);
 void torque(int sMode);
 void getServoStatus(void);
+void readEncoder(void);
+void touch_up(void);
+void touch_down(void);
 
 
 //Setup
@@ -183,11 +195,17 @@ void setup() {
   timerAlarmWrite(timer, TIMER_INTERRUPT * 1000, true);
   timerAlarmEnable(timer); 
 
+  // Initialize GPIO Interrupt
+  attachInterrupt(touch_upPin, touch_up, CHANGE);
+  attachInterrupt(touch_downPin, touch_down, CHANGE);
+
   initEncoder();
 
   M5.Lcd.setTextSize(2);
 
   pinMode(rssiPin, INPUT);  
+  pinMode(touch_upPin, INPUT);
+  pinMode(touch_downPin, INPUT);
 
   // Initialize IIC
   Wire.begin();
@@ -201,12 +219,13 @@ void setup() {
   pinMode(txden, OUTPUT);  
   digitalWrite(txden, LOW);
   delay(1000);
-  torque(1);
 
   Serial2.begin(115200);
   EEPROM.begin(128);
   delay(10);
   eeprom_read();
+
+  torque(1);
 
 
   esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 900, 1940);
@@ -215,9 +234,9 @@ void setup() {
   sd_insert = SD.begin(TFCARD_CS_PIN, SPI,  24000000);
 
   M5.Lcd.drawJpgFile(SD, "/icon/icons8-sd.jpg", 280,  0);
-  M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);
+  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);
   M5.Lcd.drawJpgFile(SD, "/icon/icons8-wi-fi-1.jpg", 200,  0);
-  M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
+  //M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
   
 }
 
@@ -228,7 +247,6 @@ void loop() {
   timerInterrupt();  
   xbee_re();
   xbee_se();
- 
 
   switch (pattern) {
   case 0: 
@@ -240,34 +258,27 @@ void loop() {
 
   case 11:
     esc.write(power);
-    if( velocity_1 >= target_velocity || velocity_2 >= target_velocity ) {
+    if( velocity_threshold >= 5 ) {
       time_buff = millis();   
       pattern = 21;
-      braking_distance = (target_velocity / 9.8)*target_velocity/2;
       break;
-    }   
+    }
     break;
 
-  case 21: 
+  case 21:
     esc.write(power);
-    if(  travel_1 >= target_travel - braking_distance || travel_2 >= target_travel - braking_distance ) {
+    braking_distance = (velocity_1/3.6/ 9.8)*velocity_1/2/3.6;
+    target_travel = climb_height - braking_distance;
+    if( travel_1 >= target_travel || travel_2 >= target_travel ) {
       pattern = 31;
       break;
     }
     break;
 
   case 31:
-    esc.write(power);
-    if( power <= 0 ) {
-      pattern = 32;
-      break;
-    }
-    break;
-
-  case 32:
     power = 0;   
     esc.write(power);                          
-    if( velocity_1 < BRAKE_THRESHOLD_VELOCITY || velocity_2 < BRAKE_THRESHOLD_VELOCITY ) {
+    if( velocity_1 < BRAKE_THRESHOLD_VELOCITY /*|| velocity_2 < BRAKE_THRESHOLD_VELOCITY */) {
       pattern = 41;
       break;
     }
@@ -288,21 +299,15 @@ void timerInterrupt(void) {
     portENTER_CRITICAL(&timerMux);
     interruptCounter--;
     portEXIT_CRITICAL(&timerMux);
-    
-    pcnt_get_counter_value(PCNT_UNIT_0, &delta_count_1);
-    pcnt_counter_clear(PCNT_UNIT_0);  
-    total_count_1 += delta_count_1;
-    velocity_1 = delta_count_1 * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR / 1000;
-    travel_1 = total_count_1 * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR / 1000;
 
-    pcnt_get_counter_value(PCNT_UNIT_1, &delta_count_2);
-    pcnt_counter_clear(PCNT_UNIT_1);  
-    total_count_2 += delta_count_2;
-    velocity_2 = delta_count_2 * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR / 1000;
-    travel_2 = total_count_2 * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR / 1000;
+    readEncoder();
+    battery_persent = getBatteryGauge();
+    touch_value = !digitalRead(touch_upPin);
+
+
 
     lcd_back += 1;
-
+    iTimer10++;
     //10ms timerInterrupt
     switch(iTimer10){
     case 1:      
@@ -335,19 +340,20 @@ void timerInterrupt(void) {
     //50ms timerInterrupt
     switch (iTimer50) {
     case 10:
-      move(-500, 100);
-      if(pattern == 11 && (power < 100)) power++;
-      break;
+     if(pattern ==  11) {
+       if(power < 100) power++;
+       if( velocity_1 >= climb_velocity || velocity_2 >= climb_velocity ){
+         velocity_threshold++;
+       }
+     }
     case 20:
       if(se_pattern ==  101 ){
         Serial2.printf("%3.2f, ",(float)millis()/1000);
         Serial2.printf("%3d, "  ,pattern);
         Serial2.printf("%3d, "  ,power);
-        Serial2.printf("%3.1f, ",climb_height);
-        Serial2.printf("%4.2f, ",climb_velocity);
         Serial2.printf("%5.2f, ",travel_1);
+        Serial2.printf("%4.2f, ",velocity_1);
         Serial2.printf("%5.2f, ",travel_2);
-        Serial2.printf("%2d, ",rssi_width);
         Serial2.printf("%5d, "  ,rssi_value);
         Serial2.printf("%5.1f, "  ,servo_angle);
         Serial2.printf("%5.3f, "  ,servo_torque);
@@ -356,6 +362,7 @@ void timerInterrupt(void) {
         Serial2.printf("\n");
       }
       break;
+
     case 30:
       rssi_width = pulseIn(rssiPin, HIGH, 100);
       if( rssi_width == 0 ) {
@@ -384,10 +391,10 @@ void timerInterrupt(void) {
 
     case 50:
       if( lcd_pattern > 10 && lcd_pattern < 20 && lcd_back > 2000 ) {
-        M5.lcd.clear();
+        M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
         lcd_pattern = 10;
       } else if( lcd_pattern > 110 && lcd_pattern < 120 && lcd_back > 2000){
-        M5.lcd.clear();
+        M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
         lcd_pattern = 110;
       }
       lcd_flag = true;
@@ -432,6 +439,7 @@ void xbee_re(void){
       case 21:
         if(re_val == 1){
           pattern = 11;
+          se_pattern = 101;
         } else {
           re_pattern = 1;
         }
@@ -504,18 +512,11 @@ void xbee_re(void){
         re_pattern = 0;
         break;
 
-      case 201:
-        if(re_val == 1){
-          pattern = 201;
-        }else{
-          se_pattern = 1;
-        }
-        re_pattern = 0;
-        break;
 
-      case 211:
+      case 221:
         if(re_val == 1){
-          pattern = 211;
+          move(500, 0);
+
         }else{
           se_pattern = 1;
         }
@@ -527,16 +528,18 @@ void xbee_re(void){
         re_pattern  = 0;
         se_pattern  = 101;
         Serial2.printf("\n");
-      } else if( xbee_re_buffer[xbee_index] ==  'U' ||  xbee_re_buffer[xbee_index] == 'u'){
-        re_pattern  = 201;
-        se_pattern  = 201;
+      } else if( xbee_re_buffer[xbee_index] ==  'B' ||  xbee_re_buffer[xbee_index] == 'b'){
+        move(-40, 0);
+        Serial2.printf("\n\n");
+        Serial2.printf(" Brake On \n ");
+        re_pattern  = 0;
+        se_pattern  = 1;
         Serial2.printf("\n");
-      } else if( xbee_re_buffer[xbee_index] ==  'D' ||  xbee_re_buffer[xbee_index] == 'd'){
-        re_pattern  = 211;
-        se_pattern  = 211;
+      } else if( xbee_re_buffer[xbee_index] ==  'O' ||  xbee_re_buffer[xbee_index] == 'o'){
+        re_pattern  = 221;
+        se_pattern  = 221;
         Serial2.printf("\n");
       } else if( xbee_re_buffer[xbee_index] ==  ' '){
-  
         lcd_pattern = 0;
         pattern = 2;
         Serial2.printf("\n\n");
@@ -567,6 +570,8 @@ void xbee_se(void){
                     "Test program Ver1.20\n");
     Serial2.printf("\n");
     Serial2.printf(" 11 : Start Seqwnse\n");
+    Serial2.printf(" B  : brake On\n");
+    Serial2.printf(" O  : brake Off\n");
     Serial2.printf("\n");
     Serial2.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
     Serial2.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
@@ -600,12 +605,12 @@ void xbee_se(void){
     Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
     Serial2.printf("\n");
     Serial2.printf(" Confilm to Climb? ->  ");
-    se_pattern  = 2;
+    se_pattern = 2;
     break;
 
   case 31:
      Serial2.printf(" Climb Height [%3d]\n " ,climb_height);
-     Serial2.printf(" Please enter 0 to 4000 -> ");
+     Serial2.printf(" Please enter 0 to 1000 -> ");
      se_pattern = 2;
      break;
 
@@ -655,7 +660,7 @@ void xbee_se(void){
     Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
     Serial2.printf("\n");
     Serial2.printf(" Confilm to Climb? ->  ");
-    se_pattern  = 2;
+    se_pattern = 2;
     break;
 
   case 211:
@@ -669,9 +674,23 @@ void xbee_se(void){
     Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
     Serial2.printf("\n");
     Serial2.printf(" Confilm to Climb? ->  ");
-    se_pattern  = 2;
+    se_pattern = 2;
+    break;
+
+  case 221:
+    Serial2.printf(" Confilm to Brake Off? ->  ");
+    se_pattern = 2;
     break;
   }
+}
+
+//Touch_Sensor
+//------------------------------------------------------------------//
+void touch_up(void){
+  Serial2.printf(" detection obstacle above");
+}
+void touch_down(void){
+  Serial2.printf(" detection obstacle below ");
 }
 
 // RS405CB move
@@ -770,7 +789,7 @@ void getServoStatus(void) {
     servo_angle = (servo_angle_buff - 65535) / 10;
   }
   servo_torque = (float)servo_torque_buff / 1000;
-  servo_voltage = servo_voltage_buff / 100;
+  servo_voltage = (float) servo_voltage_buff / 100;
   
 }
 
@@ -842,7 +861,33 @@ void initEncoder(void) {
 //------------------------------------------------------------------//
 void lcdDisplay(void) {
   if(lcd_flag) {
+
+    if( battery_persent == 100) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);;
+    } else if( battery_persent == 75) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-75.jpg", 240,  0);;
+    } else if( battery_persent == 50) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-50.jpg", 240,  0);;
+    } else if( battery_persent == 25) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-25.jpg", 240,  0);;
+    } else {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-0.jpg", 240,  0);;
+    }
+    if( rssi_value > -60) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
+    } else if( battery_persent == 75) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-75.jpg", 160,  0);
+    } else if( battery_persent == 50) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-50.jpg", 160,  0);;
+    } else if( battery_persent == 25) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-25.jpg", 160,  0);;
+    } else {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-0.jpg", 160,  0);;
+    }
+
     switch (lcd_pattern){
+
+
     //Waiting Command
   
     case 10:
@@ -1029,10 +1074,23 @@ void lcdDisplay(void) {
       M5.Lcd.drawRect(0, 30, 160, 210, M5.Lcd.color565(50,50,50));
       M5.Lcd.drawRect(160, 30, 160, 210, M5.Lcd.color565(50,50,50));
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(33, 120);
-      M5.Lcd.printf("Temper");  
-      M5.Lcd.setCursor(216, 120);
-      M5.Lcd.printf("%d", servo_angle);
+      M5.Lcd.setCursor(30, 50);
+      M5.Lcd.printf("angle");
+      M5.Lcd.setCursor(50, 90);
+      M5.Lcd.printf("%5.1f", servo_angle); 
+      M5.Lcd.setCursor(30, 155);
+      M5.Lcd.printf("torque");
+      M5.Lcd.setCursor(50, 190);
+      M5.Lcd.printf("%5.3f", servo_torque);
+      M5.Lcd.setCursor(190, 50);
+      M5.Lcd.printf("temper");
+      M5.Lcd.setCursor(210, 90);
+      M5.Lcd.printf("%5d", servo_temp); 
+      M5.Lcd.setCursor(190, 155);
+      M5.Lcd.printf("voltage");
+      M5.Lcd.setCursor(220, 190);
+      M5.Lcd.printf("%5.1f", servo_voltage);
+     
       break;
 
     
@@ -1047,89 +1105,15 @@ void lcdDisplay(void) {
       M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
       M5.Lcd.setTextColor(CYAN,BLACK);
       M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Servo"); 
+      M5.Lcd.printf("Touch"); 
+      M5.Lcd.setCursor(14, 70);
+      M5.Lcd.printf(""); 
       M5.Lcd.setCursor(120, 170);
       M5.Lcd.printf("Marker");  
       M5.Lcd.setCursor(238, 170);
       M5.Lcd.printf("Press");
       break;
 
-    case 1121:
-      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
-      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
-      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
-      M5.Lcd.drawRect(0, 30, 106, 210, ORANGE);
-      M5.Lcd.fillRect(0, 29, 106, 2, ORANGE);
-      M5.Lcd.fillRect(0, 29, 2, 210, ORANGE);
-      M5.Lcd.fillRect(105, 29, 2, 210, ORANGE);
-      M5.Lcd.fillRect(0, 238, 106, 2, ORANGE);
-      M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Servo"); 
-      M5.Lcd.setCursor(120, 170);
-      M5.Lcd.printf("Marker");  
-      M5.Lcd.setCursor(238, 170);
-      M5.Lcd.printf("Press");
-
-    case 1122:
-      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
-      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
-      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
-      M5.Lcd.drawRect(106, 30, 108, 210, ORANGE);
-      M5.Lcd.fillRect(105, 29, 108, 2, ORANGE);
-      M5.Lcd.fillRect(105, 29, 2, 210, ORANGE);
-      M5.Lcd.fillRect(213, 29, 2, 210, ORANGE);
-      M5.Lcd.fillRect(105, 238, 108, 2, ORANGE);
-      M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Servo"); 
-      M5.Lcd.setCursor(120, 170);
-      M5.Lcd.printf("Marker");  
-      M5.Lcd.setCursor(238, 170);
-      M5.Lcd.printf("Press");
-
-    case 1123:
-      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
-      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
-      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
-      M5.Lcd.drawRect(214, 30, 106, 210, ORANGE);
-      M5.Lcd.fillRect(213, 29, 106, 2, ORANGE);
-      M5.Lcd.fillRect(213, 29, 2, 210, ORANGE);
-      M5.Lcd.fillRect(318, 29, 2, 210, ORANGE);
-      M5.Lcd.fillRect(213, 238, 106, 2, ORANGE);
-      M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Servo"); 
-      M5.Lcd.setCursor(120, 170);
-      M5.Lcd.printf("Marker");  
-      M5.Lcd.setCursor(238, 170);
-      M5.Lcd.printf("Press");
-
-//Status_Sensor_Servo
-    case 11110:
-      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
-      M5.Lcd.drawRect(0, 30, 160, 105, TFT_WHITE);
-      M5.Lcd.drawRect(160, 30, 160, 105, TFT_WHITE);
-      M5.Lcd.drawRect(0, 135, 160, 105, TFT_WHITE);
-      M5.Lcd.drawRect(160, 135, 160, 105, TFT_WHITE);
-      M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Servo"); 
-      M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Servo"); 
-      M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Servo"); 
-      M5.Lcd.setCursor(14, 170);
-      M5.Lcd.printf("Servo"); 
-      
 
 
 //Status_Codec
@@ -1202,19 +1186,17 @@ void buttonAction(void){
   M5.update();
   if (M5.BtnA.wasPressed()) {
     if( pattern == 0 ) {
-      M5.lcd.clear();
+      M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
       if( lcd_pattern >= 110 && lcd_pattern < 1000 ){
         lcd_pattern = 10;
       }
-      if( lcd_pattern >= 1110 && lcd_pattern < 1119 ){
+      if( lcd_pattern == 1110 || lcd_pattern == 1120 || lcd_pattern == 1130 ){
         lcd_pattern = 110;
       }
-      if( lcd_pattern >= 1120 && lcd_pattern < 1129 ){
-        lcd_pattern = 110;
-      }
+      
     }
   } else if (M5.BtnB.wasPressed()) {
-    M5.lcd.clear();
+    M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
     switch (lcd_pattern){
       case 11:
         lcd_pattern = 110;
@@ -1229,7 +1211,7 @@ void buttonAction(void){
         break;
 
       case 1121:
-        lcd_pattern = 11110;
+        lcd_pattern = 11120;
         break;
 
       case 113:
@@ -1242,7 +1224,7 @@ void buttonAction(void){
 
     }
   } else if (M5.BtnC.wasPressed()) {
-    M5.lcd.clear();
+    M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
     if( lcd_pattern >= 10  && lcd_pattern < 20 ){
       lcd_back = 0;
       lcd_pattern++;
@@ -1253,15 +1235,11 @@ void buttonAction(void){
       lcd_pattern++;
       if( lcd_pattern > 113 ) lcd_pattern = 111;
     }
-    if( lcd_pattern >= 1110  &&  lcd_pattern < 1120){
+    if( lcd_pattern >= 1110  &&  lcd_pattern < 2000){
       lcd_back = 0;
       if( lcd_pattern > 1112 ) lcd_pattern = 1111;
     }
-    if( lcd_pattern >= 1120  &&  lcd_pattern < 1130){
-      lcd_back = 0;
-      if( lcd_pattern > 1123 ) lcd_pattern = 1120;
-    }
-
+    
   }
 }
 
@@ -1313,12 +1291,46 @@ void IRAM_ATTR onTimer() {
 
 // Battery Gauge
 //------------------------------------------------------------------//
-uint8_t getBatteryGauge() {
+int8_t getBatteryGauge() {
   Wire.beginTransmission(0x75);
   Wire.write(0x78);
   Wire.endTransmission(false);
   if(Wire.requestFrom(0x75, 1)) {
-    return Wire.read();
+    switch (Wire.read() & 0xF0) {
+    case 0xE0: return 25;
+    case 0xC0: return 50;
+    case 0x80: return 75;
+    case 0x00: return 100;
+    default: return 0;
+    }
   }
-  return 0xff;
+  return -1;
+}
+  
+
+// Read Encoder
+//------------------------------------------------------------------//
+void readEncoder(void) {
+  pcnt_get_counter_value(PCNT_UNIT_0, &delta_count_1);
+  pcnt_counter_clear(PCNT_UNIT_0);  
+  total_count_1 += delta_count_1;
+  delta1_buffer.push(delta_count_1);
+  delta_avg_1 = 0;
+  using index_t = decltype(delta1_buffer)::index_t;
+	for (index_t i = 0; i < delta1_buffer.size(); i++) {
+		delta_avg_1 += delta1_buffer[i];
+	}
+  velocity_1 = (float)delta_avg_1 / AVERATING_BUFFER_SIZE * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR * 36 / 10;
+  travel_1 = (float)total_count_1 * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR / 1000;
+  pcnt_get_counter_value(PCNT_UNIT_1, &delta_count_2);
+  pcnt_counter_clear(PCNT_UNIT_1);  
+  total_count_2 += delta_count_2;
+  delta2_buffer.push(delta_count_2);
+  delta_avg_2 = 0;
+  using index_t = decltype(delta2_buffer)::index_t;
+	for (index_t i = 0; i < delta2_buffer.size(); i++) {
+		delta_avg_2 += delta2_buffer[i];
+	}
+  velocity_2 = (float)delta_avg_2 / AVERATING_BUFFER_SIZE * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR * 36 / 10;
+  travel_2 = (float)total_count_2 * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR / 1000;
 }
