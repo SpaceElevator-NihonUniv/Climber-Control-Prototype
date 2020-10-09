@@ -288,6 +288,8 @@ void loop() {
     pattern = 0;
     break;
   }
+
+
    
 }
 
@@ -1235,11 +1237,6 @@ void buttonAction(void){
       lcd_pattern++;
       if( lcd_pattern > 113 ) lcd_pattern = 111;
     }
-    if( lcd_pattern >= 1110  &&  lcd_pattern < 2000){
-      lcd_back = 0;
-      if( lcd_pattern > 1112 ) lcd_pattern = 1111;
-    }
-    
   }
 }
 
