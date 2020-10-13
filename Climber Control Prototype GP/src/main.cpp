@@ -101,7 +101,8 @@ uint8_t battery_persent;
 //Touch Sensor
 static const int touch_upPin = 12;
 static const int touch_downPin = 5;
-bool touch_value = false;
+bool touch_value_1 = false;
+bool touch_value_2 = false;
 
 //Timer Interrupt
 char  xbee_re_buffer[16];
@@ -225,7 +226,7 @@ void setup() {
   delay(10);
   eeprom_read();
 
-  torque(1);
+  
 
 
   esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 900, 1940);
@@ -304,9 +305,8 @@ void timerInterrupt(void) {
 
     readEncoder();
     battery_persent = getBatteryGauge();
-    touch_value = !digitalRead(touch_upPin);
-
-
+    touch_value_1 = !digitalRead(touch_upPin);
+    touch_value_2 = !digitalRead(touch_downPin);
 
     lcd_back += 1;
     iTimer10++;
@@ -393,10 +393,10 @@ void timerInterrupt(void) {
 
     case 50:
       if( lcd_pattern > 10 && lcd_pattern < 20 && lcd_back > 2000 ) {
-        M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
+        M5.Lcd.fillRect(0, 29, 320, 211, BLACK);
         lcd_pattern = 10;
       } else if( lcd_pattern > 110 && lcd_pattern < 120 && lcd_back > 2000){
-        M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
+        M5.Lcd.fillRect(0, 29, 320, 211, BLACK);
         lcd_pattern = 110;
       }
       lcd_flag = true;
@@ -517,7 +517,9 @@ void xbee_re(void){
 
       case 221:
         if(re_val == 1){
-          move(500, 0);
+          torque(1);
+          delay(10);
+          move(300, 0);
 
         }else{
           se_pattern = 1;
@@ -531,6 +533,8 @@ void xbee_re(void){
         se_pattern  = 101;
         Serial2.printf("\n");
       } else if( xbee_re_buffer[xbee_index] ==  'B' ||  xbee_re_buffer[xbee_index] == 'b'){
+        torque(0);
+        delay(10);
         move(-40, 0);
         Serial2.printf("\n\n");
         Serial2.printf(" Brake On \n ");
@@ -579,8 +583,8 @@ void xbee_se(void){
     Serial2.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
     Serial2.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
     Serial2.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
-    Serial2.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
-    Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
+    Serial2.printf(" 35 :  Starting Count     [%2d]\n",starting_count);
+    Serial2.printf(" 36 :  Stop Wait          [%2d]\n",stop_wait);
     Serial2.printf("\n");
     Serial2.printf(" T : Terementry\n");
     Serial2.printf(" U : Manual  Climb\n");
@@ -1099,18 +1103,24 @@ void lcdDisplay(void) {
 
 //Status_Sensor
     case 1120:
-      M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastVLine(214, 30, 210, TFT_WHITE);
-      M5.Lcd.drawFastHLine(0, 30, 320, TFT_WHITE);
-      M5.Lcd.drawRect(106, 30, 108, 210, TFT_WHITE);
-      M5.Lcd.drawRect(214, 30, 106, 210, TFT_WHITE);
-      M5.Lcd.drawRect(0, 30, 106, 210, TFT_WHITE);
+      M5.Lcd.drawFastVLine(106, 30, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawFastVLine(214, 30, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawFastHLine(0, 30, 320, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(106, 30, 108, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(214, 30, 106, 210, M5.Lcd.color565(50,50,50));
+      M5.Lcd.drawRect(0, 30, 106, 210, M5.Lcd.color565(50,50,50));
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(14, 170);
+      M5.Lcd.setCursor(24, 50);
       M5.Lcd.printf("Touch"); 
-      M5.Lcd.setCursor(14, 70);
-      M5.Lcd.printf(""); 
-      M5.Lcd.setCursor(120, 170);
+      M5.Lcd.setCursor(24, 90);
+      M5.Lcd.printf("Up"); 
+      M5.Lcd.setCursor(40, 130);
+      M5.Lcd.printf("%d", touch_value_1);
+      M5.Lcd.setCursor(24, 170);
+      M5.Lcd.printf("Down"); 
+      M5.Lcd.setCursor(40, 200);
+      M5.Lcd.printf("%d", touch_value_2);
+      M5.Lcd.setCursor(125, 170);
       M5.Lcd.printf("Marker");  
       M5.Lcd.setCursor(238, 170);
       M5.Lcd.printf("Press");
@@ -1153,13 +1163,19 @@ void lcdDisplay(void) {
 //Params
     case 130:
       M5.Lcd.setTextColor(CYAN,BLACK);
-      M5.Lcd.setCursor(20, 90);
-      M5.Lcd.printf("altitude: %3.1f", climb_height);
+      M5.Lcd.setCursor(20, 50);
+      M5.Lcd.printf("climb_height: %3.1f", climb_height);
+      M5.Lcd.setCursor(20, 80);
+      M5.Lcd.printf("climb_velocity: %4.2f", climb_velocity); 
+      M5.Lcd.setCursor(20, 110);
+      M5.Lcd.printf("desend_velocity: %4.2f", desend_velocity); 
       M5.Lcd.setCursor(20, 140);
-      M5.Lcd.printf("velocity: %2.2f", climb_velocity); 
+      M5.Lcd.printf("climber_accel: %6d", climber_accel); 
+      M5.Lcd.setCursor(20, 170);
+      M5.Lcd.printf("starting_count: %2d", starting_count); 
+      M5.Lcd.setCursor(20, 200);
+      M5.Lcd.printf("stop_wait: %2d", stop_wait); 
       break;
-
-
 
    // case 21:
       // Refresh Display
@@ -1188,7 +1204,7 @@ void buttonAction(void){
   M5.update();
   if (M5.BtnA.wasPressed()) {
     if( pattern == 0 ) {
-      M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
+      M5.Lcd.fillRect(0, 29, 320, 211, BLACK);
       if( lcd_pattern >= 110 && lcd_pattern < 1000 ){
         lcd_pattern = 10;
       }
@@ -1198,7 +1214,7 @@ void buttonAction(void){
       
     }
   } else if (M5.BtnB.wasPressed()) {
-    M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
+    M5.Lcd.fillRect(0, 29, 320, 211, BLACK);
     switch (lcd_pattern){
       case 11:
         lcd_pattern = 110;
@@ -1226,7 +1242,7 @@ void buttonAction(void){
 
     }
   } else if (M5.BtnC.wasPressed()) {
-    M5.Lcd.fillRect(0, 29, 320, 210, BLACK);
+    M5.Lcd.fillRect(0, 29, 320, 211, BLACK);
     if( lcd_pattern >= 10  && lcd_pattern < 20 ){
       lcd_back = 0;
       lcd_pattern++;
@@ -1304,7 +1320,6 @@ int8_t getBatteryGauge() {
   return -1;
 }
   
-
 // Read Encoder
 //------------------------------------------------------------------//
 void readEncoder(void) {
