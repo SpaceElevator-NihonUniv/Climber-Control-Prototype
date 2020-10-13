@@ -88,7 +88,7 @@ int power = 0;
 int power_buff;
 
 // Main
-unsigned char pattern = 0;
+uint16_t pattern = 0;
 unsigned char pattern_buff;
 unsigned int  time_buff;
 unsigned int  micros_time;
@@ -112,6 +112,8 @@ unsigned char se_pattern = 1;
 unsigned char re_pattern;
 float re_val;
 int sleep_flag;
+int emergrncy_stopPin = 35;
+bool emergrncy_value = false;
 
 // MPU
 float accX = 0.0F;
@@ -183,6 +185,7 @@ void getServoStatus(void);
 void readEncoder(void);
 void touch_up(void);
 void touch_down(void);
+void emergrncy_stop(void);
 
 
 //Setup
@@ -196,9 +199,6 @@ void setup() {
   timerAlarmWrite(timer, TIMER_INTERRUPT * 1000, true);
   timerAlarmEnable(timer); 
 
-  // Initialize GPIO Interrupt
-  attachInterrupt(touch_upPin, touch_up, CHANGE);
-  attachInterrupt(touch_downPin, touch_down, CHANGE);
 
   initEncoder();
 
@@ -207,6 +207,13 @@ void setup() {
   pinMode(rssiPin, INPUT);  
   pinMode(touch_upPin, INPUT);
   pinMode(touch_downPin, INPUT);
+  pinMode(emergrncy_stopPin, INPUT);
+
+
+  // Initialize GPIO Interrupt
+  attachInterrupt(touch_upPin, touch_up, FALLING);
+  attachInterrupt(touch_downPin, touch_down, FALLING);
+  attachInterrupt(emergrncy_stopPin, emergrncy_stop, FALLING);
 
   // Initialize IIC
   Wire.begin();
@@ -238,6 +245,7 @@ void setup() {
   //M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);
   M5.Lcd.drawJpgFile(SD, "/icon/icons8-wi-fi-1.jpg", 200,  0);
   //M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
+
   
 }
 
@@ -288,10 +296,18 @@ void loop() {
   case 41:
     pattern = 0;
     break;
+
+  case 900:
+    power = 0;
+    esc.write(power);
+    torque(0);
+    move(-40, 0);
+    break;
+
+
   }
 
 
-   
 }
 
 // Timer Interrupt
@@ -307,6 +323,8 @@ void timerInterrupt(void) {
     battery_persent = getBatteryGauge();
     touch_value_1 = !digitalRead(touch_upPin);
     touch_value_2 = !digitalRead(touch_downPin);
+    emergrncy_value = !digitalRead(emergrncy_stopPin);
+    if( pattern == 900 && !emergrncy_value ) pattern = 0;
 
     lcd_back += 1;
     iTimer10++;
@@ -693,12 +711,18 @@ void xbee_se(void){
 //Touch_Sensor
 //------------------------------------------------------------------//
 void touch_up(void){
-  Serial2.printf(" detection obstacle above");
+  Serial2.printf(" detection obstacle above ");
 }
 void touch_down(void){
   Serial2.printf(" detection obstacle below ");
 }
 
+//emergrncy_Stop
+//------------------------------------------------------------------//
+void emergrncy_stop(void){
+  Serial2.printf(" detection emergency \n");
+  pattern = 900;
+}
 // RS405CB move
 //------------------------------------------------------------------//
 void move(int sPos, int sTime) {
@@ -890,6 +914,16 @@ void lcdDisplay(void) {
     } else {
       M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-0.jpg", 160,  0);;
     }
+
+  M5.Lcd.setCursor(5, 7);
+  if( emergrncy_value ){
+    M5.Lcd.setTextColor(RED,BLACK);
+    M5.Lcd.printf("EMG ENA");
+  } else {
+    M5.Lcd.setTextColor(BLUE,BLACK);
+    M5.Lcd.printf("EMG DIS");
+  }
+  M5.Lcd.setTextColor(CYAN,BLACK);
 
     switch (lcd_pattern){
 
