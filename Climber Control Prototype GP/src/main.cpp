@@ -32,7 +32,7 @@
 #define PCNT_H_LIM_VAL  10000               // Counter Limit H
 #define PCNT_L_LIM_VAL -10000               // Counter Limit L 
 
-#define BRAKE_THRESHOLD_VELOCITY 1          // 1m/s
+#define BRAKE_THRESHOLD_VELOCITY 3.6          // 1km/h
 
 #define DRIVER_ROLLER_PERIMETER 283.00         //mm
 #define IDLER_ROLLER_PERIMETER 94.25        //mm
@@ -97,12 +97,16 @@ bool sd_insert = false;
 int lcd_pattern = 10;
 uint16_t lcd_back = 0;
 uint8_t battery_persent;
+long current_time = 0;
+long current_time_buff = 0;
 
 //Touch Sensor
 static const int touch_upPin = 12;
 static const int touch_downPin = 5;
 bool touch_value_1 = false;
 bool touch_value_2 = false;
+unsigned int touch_flag_1_buff;
+unsigned int touch_flag_2_buff;
 
 //Timer Interrupt
 char  xbee_re_buffer[16];
@@ -112,8 +116,9 @@ unsigned char se_pattern = 1;
 unsigned char re_pattern;
 float re_val;
 int sleep_flag;
-int emergrncy_stopPin = 35;
-bool emergrncy_value = false;
+int emergency_stopPin = 35;
+volatile bool emergency_value = false;
+unsigned int emergency_flag_buff;
 
 
 // MPU
@@ -155,8 +160,8 @@ unsigned int climb_height;
 unsigned int climb_velocity;
 unsigned int desend_velocity;
 unsigned int climber_accel;
-char starting_count;
-char stop_wait;
+int starting_count;
+int stop_wait;
 
 //RSSI
 const int rssiPin = 34;
@@ -186,7 +191,7 @@ void getServoStatus(void);
 void readEncoder(void);
 void touch_up(void);
 void touch_down(void);
-void emergrncy_stop(void);
+void emergency_stop(void);
 
 
 //Setup
@@ -208,13 +213,13 @@ void setup() {
   pinMode(rssiPin, INPUT);  
   pinMode(touch_upPin, INPUT);
   pinMode(touch_downPin, INPUT);
-  pinMode(emergrncy_stopPin, INPUT);
+  pinMode(emergency_stopPin, INPUT);
 
 
   // Initialize GPIO Interrupt
   attachInterrupt(touch_upPin, touch_up, FALLING);
   attachInterrupt(touch_downPin, touch_down, FALLING);
-  attachInterrupt(emergrncy_stopPin, emergrncy_stop, FALLING);
+  attachInterrupt(emergency_stopPin, emergency_stop, FALLING);
 
   // Initialize IIC
   Wire.begin();
@@ -258,18 +263,18 @@ void loop() {
   xbee_re();
   xbee_se();
 
+  current_time = millis() - current_time_buff;
+
   switch (pattern) {
   case 0: 
     power = 0;   
     esc.write(power);
     lcdDisplay();
     buttonAction();
-    break;  
+    break; 
 
   case 11:
-    esc.write(power);
-    if( velocity_threshold >= 5 ) {
-      time_buff = millis();   
+    if( current_time > 0 ) {
       pattern = 21;
       break;
     }
@@ -277,28 +282,48 @@ void loop() {
 
   case 21:
     esc.write(power);
-    braking_distance = (velocity_1/3.6/ 9.8)*velocity_1/2/3.6;
-    target_travel = climb_height - braking_distance;
-    if( travel_1 >= target_travel || travel_2 >= target_travel ) {
+    if( velocity_threshold >= 5 ) {
+      time_buff = millis();   
       pattern = 31;
       break;
     }
     break;
 
   case 31:
-    power = 0;   
-    esc.write(power);                          
-    if( velocity_1 < BRAKE_THRESHOLD_VELOCITY /*|| velocity_2 < BRAKE_THRESHOLD_VELOCITY */) {
+    esc.write(power);
+    braking_distance = (velocity_1/3.6/ 9.8)*velocity_1/2/3.6;
+    target_travel = climb_height - braking_distance;
+    if( travel_1 >= target_travel || travel_2 >= target_travel ) {
       pattern = 41;
       break;
     }
     break;
 
   case 41:
-    pattern = 0;
+    power = 0;   
+    esc.write(power);                          
+    if( velocity_1 < BRAKE_THRESHOLD_VELOCITY /*|| velocity_2 < BRAKE_THRESHOLD_VELOCITY */) {
+      time_buff = millis();
+      pattern = 51;
+      break;
+    }
+    break;
+
+  case 51:
+    if( millis() - time_buff > stop_wait *1000 ) {
+      pattern = 61;
+    }
+    break;
+
+  case 61:
+    power = 0;
+    esc.write(power);
+    torque(1);
+    move(300, 0);
     break;
 
   case 900:
+    lcdDisplay();
     power = 0;
     esc.write(power);
     torque(0);
@@ -310,6 +335,7 @@ void loop() {
     esc.write(power);
     torque(0);
     move(-40, 0);
+    se_pattern = 1;
     break;
 
   case 902:
@@ -317,6 +343,7 @@ void loop() {
     esc.write(power);
     torque(0);
     move(-40, 0);
+    se_pattern = 1;
     break;
   }
 
@@ -336,13 +363,17 @@ void timerInterrupt(void) {
     battery_persent = getBatteryGauge();
     touch_value_1 = !digitalRead(touch_upPin);
     touch_value_2 = !digitalRead(touch_downPin);
-    emergrncy_value = !digitalRead(emergrncy_stopPin);
-    if ( pattern == 900 && !emergrncy_value ) pattern = 0;
-    touch_value_1 = !digitalRead(touch_upPin);
-    if ( pattern == 901 && !emergrncy_value ) pattern = 0;
-    touch_value_2 = !digitalRead(touch_downPin);
-    if ( pattern == 902 && !emergrncy_value ) pattern = 0;
 
+    emergency_value = !digitalRead(emergency_stopPin);
+    if ( pattern == 900 && !emergency_value ) pattern = 0;
+    touch_value_1 = !digitalRead(touch_upPin);
+    if ( pattern == 901 && !emergency_value ) pattern = 0;
+    touch_value_2 = !digitalRead(touch_downPin);
+    if ( pattern == 902 && !emergency_value ) pattern = 0;
+
+    touch_flag_1_buff++;
+    touch_flag_2_buff++;
+    emergency_flag_buff++;
 
     lcd_back += 1;
     iTimer10++;
@@ -378,15 +409,18 @@ void timerInterrupt(void) {
     //50ms timerInterrupt
     switch (iTimer50) {
     case 10:
-     if(pattern ==  11) {
+     if(pattern == 21) {
        if(power < 100) power++;
        if( velocity_1 >= climb_velocity || velocity_2 >= climb_velocity ){
          velocity_threshold++;
        }
-     }
+     }  
+     
+     break;
+
     case 20:
       if(se_pattern ==  101 ){
-        Serial2.printf("%3.2f, ",(float)millis()/1000);
+        Serial2.printf("%3.2f, ",(float)current_time/1000);
         Serial2.printf("%3d, "  ,pattern);
         Serial2.printf("%3d, "  ,power);
         Serial2.printf("%5.2f, ",travel_1);
@@ -476,6 +510,7 @@ void xbee_re(void){
         break;
       case 21:
         if(re_val == 1){
+          current_time_buff = millis() + starting_count*1000;
           pattern = 11;
           se_pattern = 101;
         } else {
@@ -583,12 +618,11 @@ void xbee_re(void){
         Serial2.printf("\n");
       } else if( xbee_re_buffer[xbee_index] ==  ' '){
         lcd_pattern = 0;
-        pattern = 2;
         Serial2.printf("\n\n");
         Serial2.printf(" Emargency Stop Enable \n ");
         Serial2.printf(" return Case 0 \n ");
+        pattern = 0;
         re_pattern = 0;
-        se_pattern = 1;
         Serial2.printf("\n");
       }else{
           xbee_index++;
@@ -619,8 +653,8 @@ void xbee_se(void){
     Serial2.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
     Serial2.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
     Serial2.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
-    Serial2.printf(" 35 :  Starting Count     [%2d]\n",starting_count);
-    Serial2.printf(" 36 :  Stop Wait          [%2d]\n",stop_wait);
+    Serial2.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
+    Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
     Serial2.printf("\n");
     Serial2.printf(" T : Terementry\n");
     Serial2.printf(" U : Manual  Climb\n");
@@ -729,20 +763,30 @@ void xbee_se(void){
 //Touch_Sensor
 //------------------------------------------------------------------//
 void touch_up(void){
-  Serial2.printf(" detection obstacle above ");
-  pattern = 901;
+  if( touch_flag_1_buff > 500 ){
+    Serial2.printf(" detection obstacle above \n");
+    touch_flag_1_buff = 0;
+    pattern = 901;
+  }
 }
 void touch_down(void){
-  Serial2.printf(" detection obstacle below ");
-  pattern = 902;
+  if( touch_flag_2_buff > 500 ){
+    Serial2.printf(" detection obstacle below \n");
+    touch_flag_2_buff = 0;
+    pattern = 902;
+  }
 }
 
-//emergrncy_Stop
+//emergency_Stop
 //------------------------------------------------------------------//
-void emergrncy_stop(void){
-  Serial2.printf(" detection emergency \n");
-  pattern = 900;
+void emergency_stop(void){
+  if( emergency_flag_buff > 500 ){
+    Serial2.printf(" detection emergency \n");
+    emergency_flag_buff = 0;
+    pattern = 900;
+  }
 }
+
 // RS405CB move
 //------------------------------------------------------------------//
 void move(int sPos, int sTime) {
@@ -912,41 +956,42 @@ void initEncoder(void) {
 void lcdDisplay(void) {
   if(lcd_flag) {
 
-    if( battery_persent == 100) {
-      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);;
-    } else if( battery_persent == 75) {
-      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-75.jpg", 240,  0);;
-    } else if( battery_persent == 50) {
-      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-50.jpg", 240,  0);;
-    } else if( battery_persent == 25) {
-      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-25.jpg", 240,  0);;
+   M5.Lcd.setCursor(5, 7);
+    if( emergency_value ){
+      M5.Lcd.setTextColor(RED,BLACK);
+      M5.Lcd.printf("EMG ENA");
     } else {
-      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-0.jpg", 240,  0);;
+      M5.Lcd.setTextColor(BLUE,BLACK);
+      M5.Lcd.printf("EMG DIS");
+    }
+      M5.Lcd.setTextColor(CYAN,BLACK);
+
+
+    if( battery_persent == 100) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);
+    } else if( battery_persent == 75) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-75.jpg", 240,  0);
+    } else if( battery_persent == 50) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-50.jpg", 240,  0);
+    } else if( battery_persent == 25) {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-25.jpg", 240,  0);
+    } else {
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-0.jpg", 240,  0);
     }
     if( rssi_value > -60) {
       M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
     } else if( battery_persent == 75) {
       M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-75.jpg", 160,  0);
     } else if( battery_persent == 50) {
-      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-50.jpg", 160,  0);;
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-50.jpg", 160,  0);
     } else if( battery_persent == 25) {
-      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-25.jpg", 160,  0);;
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-25.jpg", 160,  0);
     } else {
-      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-0.jpg", 160,  0);;
+      M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-0.jpg", 160,  0);
     }
 
-  M5.Lcd.setCursor(5, 7);
-  if( emergrncy_value ){
-    M5.Lcd.setTextColor(RED,BLACK);
-    M5.Lcd.printf("EMG ENA");
-  } else {
-    M5.Lcd.setTextColor(BLUE,BLACK);
-    M5.Lcd.printf("EMG DIS");
-  }
-  M5.Lcd.setTextColor(CYAN,BLACK);
 
     switch (lcd_pattern){
-
 
     //Waiting Command
   
