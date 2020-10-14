@@ -115,6 +115,7 @@ int sleep_flag;
 int emergrncy_stopPin = 35;
 bool emergrncy_value = false;
 
+
 // MPU
 float accX = 0.0F;
 float accY = 0.0F;
@@ -304,7 +305,19 @@ void loop() {
     move(-40, 0);
     break;
 
+  case 901:
+    power = 0;
+    esc.write(power);
+    torque(0);
+    move(-40, 0);
+    break;
 
+  case 902:
+    power = 0;
+    esc.write(power);
+    torque(0);
+    move(-40, 0);
+    break;
   }
 
 
@@ -324,7 +337,12 @@ void timerInterrupt(void) {
     touch_value_1 = !digitalRead(touch_upPin);
     touch_value_2 = !digitalRead(touch_downPin);
     emergrncy_value = !digitalRead(emergrncy_stopPin);
-    if( pattern == 900 && !emergrncy_value ) pattern = 0;
+    if ( pattern == 900 && !emergrncy_value ) pattern = 0;
+    touch_value_1 = !digitalRead(touch_upPin);
+    if ( pattern == 901 && !emergrncy_value ) pattern = 0;
+    touch_value_2 = !digitalRead(touch_downPin);
+    if ( pattern == 902 && !emergrncy_value ) pattern = 0;
+
 
     lcd_back += 1;
     iTimer10++;
@@ -712,9 +730,11 @@ void xbee_se(void){
 //------------------------------------------------------------------//
 void touch_up(void){
   Serial2.printf(" detection obstacle above ");
+  pattern = 901;
 }
 void touch_down(void){
   Serial2.printf(" detection obstacle below ");
+  pattern = 902;
 }
 
 //emergrncy_Stop
