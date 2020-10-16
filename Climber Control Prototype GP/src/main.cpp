@@ -282,17 +282,22 @@ void loop() {
 
   case 21:
     esc.write(power);
-    if( velocity_threshold >= 5 ) {
+    if( velocity_threshold >= 2 ) {
       time_buff = millis();   
       pattern = 31;
       break;
     }
+    braking_distance = (velocity_1/3.6/ 9.8)*velocity_1/2/3.6;
+    target_travel = climb_height - braking_distance;
+    if( travel_1 >= target_travel || travel_2 >= target_travel){
+      pattern = 41;
+      break;
+    }
     break;
+
 
   case 31:
     esc.write(power);
-    braking_distance = (velocity_1/3.6/ 9.8)*velocity_1/2/3.6;
-    target_travel = climb_height - braking_distance;
     if( travel_1 >= target_travel || travel_2 >= target_travel ) {
       pattern = 41;
       break;
@@ -319,9 +324,10 @@ void loop() {
     power = 0;
     esc.write(power);
     torque(1);
-    move(300, 0);
+    move(800, 0);
     break;
 
+  // Emergency stopPin
   case 900:
     lcdDisplay();
     power = 0;
@@ -330,6 +336,7 @@ void loop() {
     move(-40, 0);
     break;
 
+  // Emergency touch_upPin
   case 901:
     power = 0;
     esc.write(power);
@@ -338,6 +345,7 @@ void loop() {
     se_pattern = 1;
     break;
 
+  // Emergency touch_downPin
   case 902:
     power = 0;
     esc.write(power);
@@ -345,7 +353,17 @@ void loop() {
     move(-40, 0);
     se_pattern = 1;
     break;
+
+  // Emergency Encoder
+  case 903:
+    power = 0;
+    esc.write(power);
+    torque(0);
+    move(-40, 0);
   }
+
+  
+
 
 
 }
@@ -370,6 +388,7 @@ void timerInterrupt(void) {
     if ( pattern == 901 && !emergency_value ) pattern = 0;
     touch_value_2 = !digitalRead(touch_downPin);
     if ( pattern == 902 && !emergency_value ) pattern = 0;
+
 
     touch_flag_1_buff++;
     touch_flag_2_buff++;
@@ -424,8 +443,9 @@ void timerInterrupt(void) {
         Serial2.printf("%3d, "  ,pattern);
         Serial2.printf("%3d, "  ,power);
         Serial2.printf("%5.2f, ",travel_1);
-        Serial2.printf("%4.2f, ",velocity_1);
+        Serial2.printf("%5.2f, ",velocity_1);
         Serial2.printf("%5.2f, ",travel_2);
+        Serial2.printf("%5.2f, ",velocity_2);
         Serial2.printf("%5d, "  ,rssi_value);
         Serial2.printf("%5.1f, "  ,servo_angle);
         Serial2.printf("%5.3f, "  ,servo_torque);
@@ -590,7 +610,7 @@ void xbee_re(void){
         if(re_val == 1){
           torque(1);
           delay(10);
-          move(300, 0);
+          move(800, 0);
 
         }else{
           se_pattern = 1;
@@ -619,7 +639,7 @@ void xbee_re(void){
       } else if( xbee_re_buffer[xbee_index] ==  ' '){
         lcd_pattern = 0;
         Serial2.printf("\n\n");
-        Serial2.printf(" Emargency Stop Enable \n ");
+        Serial2.printf(" Emergency Stop Enable Spacekey\n ");
         Serial2.printf(" return Case 0 \n ");
         pattern = 0;
         re_pattern = 0;
@@ -885,70 +905,6 @@ void getServoStatus(void) {
   servo_torque = (float)servo_torque_buff / 1000;
   servo_voltage = (float) servo_voltage_buff / 100;
   
-}
-
-// Initialize Encoder
-//------------------------------------------------------------------//
-void initEncoder(void) {
-  pcnt_config_t pcnt_config_1A;
-    pcnt_config_1A.pulse_gpio_num = PULSE_INPUT_PIN_1;
-    pcnt_config_1A.ctrl_gpio_num = PULSE_CTRL_PIN_1;
-    pcnt_config_1A.lctrl_mode = PCNT_MODE_REVERSE;
-    pcnt_config_1A.hctrl_mode = PCNT_MODE_KEEP;
-    pcnt_config_1A.channel = PCNT_CHANNEL_0;
-    pcnt_config_1A.unit = PCNT_UNIT_0;
-    pcnt_config_1A.pos_mode = PCNT_COUNT_INC;
-    pcnt_config_1A.neg_mode = PCNT_COUNT_DEC;
-    pcnt_config_1A.counter_h_lim = PCNT_H_LIM_VAL;
-    pcnt_config_1A.counter_l_lim = PCNT_L_LIM_VAL;
-
-  pcnt_config_t pcnt_config_1B;
-    pcnt_config_1B.pulse_gpio_num = PULSE_CTRL_PIN_1;
-    pcnt_config_1B.ctrl_gpio_num = PULSE_INPUT_PIN_1;
-    pcnt_config_1B.lctrl_mode = PCNT_MODE_KEEP;
-    pcnt_config_1B.hctrl_mode = PCNT_MODE_REVERSE;
-    pcnt_config_1B.channel = PCNT_CHANNEL_1;
-    pcnt_config_1B.unit = PCNT_UNIT_0;
-    pcnt_config_1B.pos_mode = PCNT_COUNT_INC;
-    pcnt_config_1B.neg_mode = PCNT_COUNT_DEC;
-    pcnt_config_1B.counter_h_lim = PCNT_H_LIM_VAL;
-    pcnt_config_1B.counter_l_lim = PCNT_L_LIM_VAL;
-
-  pcnt_unit_config(&pcnt_config_1A);            // Initialize Unit 1A
-  pcnt_unit_config(&pcnt_config_1B);            // Initialize Unit 1B
-  pcnt_counter_pause(PCNT_UNIT_0);              // Stop Counter
-  pcnt_counter_clear(PCNT_UNIT_0);              // clear Counter
-  pcnt_counter_resume(PCNT_UNIT_0);             // Start Count
-
-  pcnt_config_t pcnt_config_2A;
-    pcnt_config_2A.pulse_gpio_num = PULSE_INPUT_PIN_2;
-    pcnt_config_2A.ctrl_gpio_num = PULSE_CTRL_PIN_2;
-    pcnt_config_2A.lctrl_mode = PCNT_MODE_REVERSE;
-    pcnt_config_2A.hctrl_mode = PCNT_MODE_KEEP;
-    pcnt_config_2A.channel = PCNT_CHANNEL_0;
-    pcnt_config_2A.unit = PCNT_UNIT_1;
-    pcnt_config_2A.pos_mode = PCNT_COUNT_INC;
-    pcnt_config_2A.neg_mode = PCNT_COUNT_DEC;
-    pcnt_config_2A.counter_h_lim = PCNT_H_LIM_VAL;
-    pcnt_config_2A.counter_l_lim = PCNT_L_LIM_VAL;
-
-  pcnt_config_t pcnt_config_2B;
-    pcnt_config_2B.pulse_gpio_num = PULSE_CTRL_PIN_2;
-    pcnt_config_2B.ctrl_gpio_num = PULSE_INPUT_PIN_2;
-    pcnt_config_2B.lctrl_mode = PCNT_MODE_KEEP;
-    pcnt_config_2B.hctrl_mode = PCNT_MODE_REVERSE;
-    pcnt_config_2B.channel = PCNT_CHANNEL_1;
-    pcnt_config_2B.unit = PCNT_UNIT_1;
-    pcnt_config_2B.pos_mode = PCNT_COUNT_INC;
-    pcnt_config_2B.neg_mode = PCNT_COUNT_DEC;
-    pcnt_config_2B.counter_h_lim = PCNT_H_LIM_VAL;
-    pcnt_config_2B.counter_l_lim = PCNT_L_LIM_VAL;
-
-  pcnt_unit_config(&pcnt_config_2A);            // Initialize Unit 1A
-  pcnt_unit_config(&pcnt_config_2B);            // Initialize Unit 1B
-  pcnt_counter_pause(PCNT_UNIT_1);              // Stop Counter
-  pcnt_counter_clear(PCNT_UNIT_1);              // clear Counter
-  pcnt_counter_resume(PCNT_UNIT_1);             // Start Count
 }
 
 // LCD Display
@@ -1263,17 +1219,17 @@ void lcdDisplay(void) {
     case 130:
       M5.Lcd.setTextColor(CYAN,BLACK);
       M5.Lcd.setCursor(20, 50);
-      M5.Lcd.printf("climb_height: %3.1f", climb_height);
+      M5.Lcd.printf("climb_height: %4d", climb_height);
       M5.Lcd.setCursor(20, 80);
-      M5.Lcd.printf("climb_velocity: %4.2f", climb_velocity); 
+      M5.Lcd.printf("climb_velocity: %4d", climb_velocity); 
       M5.Lcd.setCursor(20, 110);
-      M5.Lcd.printf("desend_velocity: %4.2f", desend_velocity); 
+      M5.Lcd.printf("desend_velocity: %4d", desend_velocity); 
       M5.Lcd.setCursor(20, 140);
-      M5.Lcd.printf("climber_accel: %6d", climber_accel); 
+      M5.Lcd.printf("climber_accel: %4d", climber_accel); 
       M5.Lcd.setCursor(20, 170);
-      M5.Lcd.printf("starting_count: %2d", starting_count); 
+      M5.Lcd.printf("starting_count: %4d", starting_count); 
       M5.Lcd.setCursor(20, 200);
-      M5.Lcd.printf("stop_wait: %2d", stop_wait); 
+      M5.Lcd.printf("stop_wait: %4d", stop_wait); 
       break;
 
    // case 21:
@@ -1417,6 +1373,70 @@ int8_t getBatteryGauge() {
     }
   }
   return -1;
+}
+
+// Initialize Encoder
+//------------------------------------------------------------------//
+void initEncoder(void) {
+  pcnt_config_t pcnt_config_1A;
+    pcnt_config_1A.pulse_gpio_num = PULSE_INPUT_PIN_1;
+    pcnt_config_1A.ctrl_gpio_num = PULSE_CTRL_PIN_1;
+    pcnt_config_1A.lctrl_mode = PCNT_MODE_REVERSE;
+    pcnt_config_1A.hctrl_mode = PCNT_MODE_KEEP;
+    pcnt_config_1A.channel = PCNT_CHANNEL_0;
+    pcnt_config_1A.unit = PCNT_UNIT_0;
+    pcnt_config_1A.pos_mode = PCNT_COUNT_INC;
+    pcnt_config_1A.neg_mode = PCNT_COUNT_DEC;
+    pcnt_config_1A.counter_h_lim = PCNT_H_LIM_VAL;
+    pcnt_config_1A.counter_l_lim = PCNT_L_LIM_VAL;
+
+  pcnt_config_t pcnt_config_1B;
+    pcnt_config_1B.pulse_gpio_num = PULSE_CTRL_PIN_1;
+    pcnt_config_1B.ctrl_gpio_num = PULSE_INPUT_PIN_1;
+    pcnt_config_1B.lctrl_mode = PCNT_MODE_KEEP;
+    pcnt_config_1B.hctrl_mode = PCNT_MODE_REVERSE;
+    pcnt_config_1B.channel = PCNT_CHANNEL_1;
+    pcnt_config_1B.unit = PCNT_UNIT_0;
+    pcnt_config_1B.pos_mode = PCNT_COUNT_INC;
+    pcnt_config_1B.neg_mode = PCNT_COUNT_DEC;
+    pcnt_config_1B.counter_h_lim = PCNT_H_LIM_VAL;
+    pcnt_config_1B.counter_l_lim = PCNT_L_LIM_VAL;
+
+  pcnt_unit_config(&pcnt_config_1A);            // Initialize Unit 1A
+  pcnt_unit_config(&pcnt_config_1B);            // Initialize Unit 1B
+  pcnt_counter_pause(PCNT_UNIT_0);              // Stop Counter
+  pcnt_counter_clear(PCNT_UNIT_0);              // clear Counter
+  pcnt_counter_resume(PCNT_UNIT_0);             // Start Count
+
+  pcnt_config_t pcnt_config_2A;
+    pcnt_config_2A.pulse_gpio_num = PULSE_INPUT_PIN_2;
+    pcnt_config_2A.ctrl_gpio_num = PULSE_CTRL_PIN_2;
+    pcnt_config_2A.lctrl_mode = PCNT_MODE_REVERSE;
+    pcnt_config_2A.hctrl_mode = PCNT_MODE_KEEP;
+    pcnt_config_2A.channel = PCNT_CHANNEL_0;
+    pcnt_config_2A.unit = PCNT_UNIT_1;
+    pcnt_config_2A.pos_mode = PCNT_COUNT_INC;
+    pcnt_config_2A.neg_mode = PCNT_COUNT_DEC;
+    pcnt_config_2A.counter_h_lim = PCNT_H_LIM_VAL;
+    pcnt_config_2A.counter_l_lim = PCNT_L_LIM_VAL;
+
+  pcnt_config_t pcnt_config_2B;
+    pcnt_config_2B.pulse_gpio_num = PULSE_CTRL_PIN_2;
+    pcnt_config_2B.ctrl_gpio_num = PULSE_INPUT_PIN_2;
+    pcnt_config_2B.lctrl_mode = PCNT_MODE_KEEP;
+    pcnt_config_2B.hctrl_mode = PCNT_MODE_REVERSE;
+    pcnt_config_2B.channel = PCNT_CHANNEL_1;
+    pcnt_config_2B.unit = PCNT_UNIT_1;
+    pcnt_config_2B.pos_mode = PCNT_COUNT_INC;
+    pcnt_config_2B.neg_mode = PCNT_COUNT_DEC;
+    pcnt_config_2B.counter_h_lim = PCNT_H_LIM_VAL;
+    pcnt_config_2B.counter_l_lim = PCNT_L_LIM_VAL;
+
+  pcnt_unit_config(&pcnt_config_2A);            // Initialize Unit 1A
+  pcnt_unit_config(&pcnt_config_2B);            // Initialize Unit 1B
+  pcnt_counter_pause(PCNT_UNIT_1);              // Stop Counter
+  pcnt_counter_clear(PCNT_UNIT_1);              // clear Counter
+  pcnt_counter_resume(PCNT_UNIT_1);             // Start Count
 }
   
 // Read Encoder
