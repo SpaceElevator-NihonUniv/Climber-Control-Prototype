@@ -17,6 +17,8 @@
 #include <Servo.h>
 #include "driver/pcnt.h"
 #include <EEPROM.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
 
 
 //Define
@@ -27,8 +29,8 @@
 
 #define PULSE_INPUT_PIN_1 26                // Rotaly Encoder Phase A
 #define PULSE_CTRL_PIN_1  25                // REncoder Phase B
-#define PULSE_INPUT_PIN_2 13                // Rotaly Encoder Phase A
-#define PULSE_CTRL_PIN_2  0                 // Rotaly Encoder Phase B
+#define PULSE_INPUT_PIN_2 0                // Rotaly Encoder Phase A
+#define PULSE_CTRL_PIN_2  13                 // Rotaly Encoder Phase B
 #define PCNT_H_LIM_VAL  10000               // Counter Limit H
 #define PCNT_L_LIM_VAL -10000               // Counter Limit L 
 
@@ -36,6 +38,9 @@
 
 #define DRIVER_ROLLER_PERIMETER 283.00         //mm
 #define IDLER_ROLLER_PERIMETER 94.25        //mm
+
+#define DRIVER_ROLLER_COEFFICIENT 1.0633
+#define IDLER_ROLLER_COEFFICIENT 0.9788
 
 #define DRIVER_ROLLER_PPR 2000
 #define IDLER_ROLLER_PPR 400
@@ -46,6 +51,8 @@
 //------------------------------------------------------------------//
 CircularBuffer<int, AVERATING_BUFFER_SIZE> delta1_buffer;
 CircularBuffer<int, AVERATING_BUFFER_SIZE> delta2_buffer;
+CircularBuffer<int, 20> encoder1_status_buffer;
+CircularBuffer<int, 20> encoder2_status_buffer;
 
 // Timer
 hw_timer_t * timer = NULL;
@@ -81,11 +88,16 @@ int16_t delta_count_2_buff;
 long    total_count_2_buff;
 unsigned int braking_distance;
 
+float travel_1_buff;
+float travel_2_buff;
+uint16_t encoder1_status_counter;
+uint16_t encoder2_status_counter;
+
 // ESC
 static const int escPin = 2;
 Servo esc;
-int power = 0;
-int power_buff;
+float power = 0;
+float power_increment = 1;
 
 // Main
 uint16_t pattern = 0;
@@ -120,6 +132,29 @@ int emergency_stopPin = 35;
 volatile bool emergency_value = false;
 unsigned int emergency_flag_buff;
 
+// WiFi credentials.
+// Set password to "" for open networks.
+char ssid3[] = "Buffalo-G-9030";
+char pass3[] = "kdtedkktjkcpc";
+char ssid2[] = "X1Extreme-Hotspot";
+char pass2[] = "5]6C458w";
+char ssid1[] = "LUCKY 3460";
+char pass1[] = "6Fy98&74";
+
+bool second_flag = false;
+bool third_flag = false;
+bool wifi_flag = true;
+unsigned char wifi_cnt = 0;
+
+bool OTA_flag = false;
+
+// Time
+char ntpServer[] = "ntp.nict.jp";
+const long gmtOffset_sec = 9 * 3600;
+const int  daylightOffset_sec = 0;
+struct tm timeinfo;
+String dateStr;
+String timeStr;
 
 // MPU
 float accX = 0.0F;
@@ -192,6 +227,8 @@ void readEncoder(void);
 void touch_up(void);
 void touch_down(void);
 void emergency_stop(void);
+void getTimeFromNTP(void);
+void getTime(void);
 
 
 //Setup
@@ -199,6 +236,102 @@ void emergency_stop(void);
 void setup() {
 
   M5.begin(1, 1, 1, 1);
+  
+  M5.Lcd.setTextSize(2);
+  M5.Lcd.setCursor(0, 0);  
+  M5.Lcd.printf("Connecting Fact");  
+  WiFi.mode(WIFI_STA); 
+  WiFi.begin(ssid1, pass1);  
+  while (WiFi.status() != WL_CONNECTED) {
+    wifi_cnt++;
+    M5.Lcd.printf(".");  
+    if( wifi_cnt > 8 ) {
+      wifi_cnt = 0;
+      second_flag = true;
+      while(WiFi.status() == WL_CONNECTED ){
+        WiFi.disconnect();
+        delay(10);
+      }
+      break;
+    }
+    delay(500);  
+  }
+  if(second_flag) {
+    M5.Lcd.setCursor(0, 30);  
+    M5.Lcd.printf("Connecting X1Ext ");  
+    WiFi.mode(WIFI_STA); 
+    WiFi.begin(ssid2, pass2);  
+    while (WiFi.status() != WL_CONNECTED) {
+      wifi_cnt++;
+      M5.Lcd.printf(".");  
+      if( wifi_cnt > 8 ) {
+        wifi_cnt = 0;
+        third_flag = true;
+        break;
+        while(WiFi.status() == WL_CONNECTED ){
+          //WiFi.disconnect();
+          delay(10);
+        }
+        break;
+      }
+      delay(500);  
+    }
+  }
+  if(third_flag) {
+    M5.Lcd.setCursor(0, 60);  
+    M5.Lcd.printf("Connecting Phone ");  
+    WiFi.mode(WIFI_STA); 
+    WiFi.begin(ssid3, pass3);  
+    while (WiFi.status() != WL_CONNECTED) {
+      wifi_cnt++;
+      M5.Lcd.printf(".");  
+      if( wifi_cnt > 8 ) {
+        wifi_cnt = 0;
+        wifi_flag = false;
+        break;
+      }
+      delay(500);  
+    }
+  }
+  M5.Lcd.clear();  
+  M5.Lcd.setCursor(0, 0);  
+  M5.Lcd.printf("Hold BtnA to switch OTA");
+  delay(1000);
+  if(!M5.BtnA.read()) {
+    if( wifi_flag ) {
+      // timeSet
+      getTimeFromNTP();
+      getTime();
+      while(WiFi.status() == WL_CONNECTED ){
+        WiFi.disconnect();
+        delay(2000);
+      }
+      //fname_buff  = "/log/Climb_"
+      //            +(String)(timeinfo.tm_year + 1900)
+      //            +"_"+(String)(timeinfo.tm_mon + 1)
+      //            +"_"+(String)timeinfo.tm_mday
+      //            +"_"+(String)timeinfo.tm_hour
+      //            +"_"+(String)timeinfo.tm_min
+      //            +".csv";
+      //fname = fname_buff.c_str();
+    } else {
+      //fname_buff  = "/log/Climb_log.csv";
+      //fname = fname_buff.c_str();
+    }
+    WiFi.mode(WIFI_OFF);
+  } else {
+    OTA_flag = true;
+    ArduinoOTA
+    .setHostname("M5StackClimberControllerGP")
+    .onStart([]() {})
+    .onEnd([]() {})
+    .onProgress([](unsigned int progress, unsigned int total) {})
+    .onError([](ota_error_t error) {}); 
+    ArduinoOTA.begin();
+    lcd_pattern = 51;
+  }
+  M5.Lcd.clear();
+
   // Initialize Timer Interrupt
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &onTimer, true);
@@ -249,7 +382,11 @@ void setup() {
 
   M5.Lcd.drawJpgFile(SD, "/icon/icons8-sd.jpg", 280,  0);
   //M5.Lcd.drawJpgFile(SD, "/icon/icons8-battery-level-100.jpg", 240,  0);
-  M5.Lcd.drawJpgFile(SD, "/icon/icons8-wi-fi-1.jpg", 200,  0);
+  if( wifi_flag ){
+    M5.Lcd.drawJpgFile(SD, "/icon/icons8-wi-fi-1.jpg", 200,  0);
+  } else {
+    M5.Lcd.drawJpgFile(SD, "/icon/icons8-wi-fi-0.jpg", 200,  0);
+  }
   //M5.Lcd.drawJpgFile(SD, "/icon/icons8-signal-100.jpg", 160,  0);
 
   
@@ -258,6 +395,8 @@ void setup() {
 //Main
 //------------------------------------------------------------------//
 void loop() {
+
+  if(OTA_flag) ArduinoOTA.handle();
 
   timerInterrupt();  
   xbee_re();
@@ -275,6 +414,15 @@ void loop() {
 
   case 11:
     if( current_time > 0 ) {
+      power_increment = (float)100 / (10 / climber_accel *1000 / 50);
+      using index_t = decltype(encoder1_status_buffer)::index_t;
+      for (index_t i = 0; i < encoder1_status_buffer.size(); i++) {
+        encoder1_status_buffer.push(1);
+        }
+      using index_t = decltype(encoder2_status_buffer)::index_t;
+      for (index_t i = 0; i < encoder2_status_buffer.size(); i++) {
+        encoder2_status_buffer.push(1);
+      }
       pattern = 21;
       break;
     }
@@ -360,6 +508,8 @@ void loop() {
     esc.write(power);
     torque(0);
     move(-40, 0);
+    
+    break;
   }
 
   
@@ -428,20 +578,23 @@ void timerInterrupt(void) {
     //50ms timerInterrupt
     switch (iTimer50) {
     case 10:
-     if(pattern == 21) {
-       if(power < 100) power++;
-       if( velocity_1 >= climb_velocity || velocity_2 >= climb_velocity ){
+      if(pattern == 21) {
+        if(power < 100) {
+         power += power_increment;
+        } else {
+         power = 100;
+        }
+        if( velocity_1 >= climb_velocity || velocity_2 >= climb_velocity ){
          velocity_threshold++;
-       }
-     }  
-     
+        }
+      }  
      break;
 
     case 20:
       if(se_pattern ==  101 ){
         Serial2.printf("%3.2f, ",(float)current_time/1000);
         Serial2.printf("%3d, "  ,pattern);
-        Serial2.printf("%3d, "  ,power);
+        Serial2.printf("%5.1f, "  ,power);
         Serial2.printf("%5.2f, ",travel_1);
         Serial2.printf("%5.2f, ",velocity_1);
         Serial2.printf("%5.2f, ",travel_2);
@@ -482,6 +635,37 @@ void timerInterrupt(void) {
       break;
 
     case 50:
+      
+      if( travel_1 == travel_1_buff ){
+        encoder1_status_buffer.push(0);
+      } else {
+        encoder1_status_buffer.push(1);
+      }
+      if( travel_2 == travel_2_buff ){
+        encoder2_status_buffer.push(0);
+      } else {
+        encoder2_status_buffer.push(1);
+      }
+      encoder1_status_counter = 0;
+      using index_t = decltype(encoder1_status_buffer)::index_t;
+      for (index_t i = 0; i < encoder1_status_buffer.size(); i++) {
+        encoder1_status_counter += encoder1_status_buffer[i];
+      }
+      if( encoder1_status_counter <= 5 && pattern >= 21 && pattern <= 41 ) {
+        se_pattern = 1;
+        pattern = 903;
+      }
+      encoder2_status_counter = 0;
+      using index_t = decltype(encoder2_status_buffer)::index_t;
+      for (index_t i = 0; i < encoder2_status_buffer.size(); i++) {
+        encoder2_status_counter += encoder2_status_buffer[i];
+      }
+      if( encoder2_status_counter <= 5 && pattern >= 21 && pattern <= 41 ) {
+        se_pattern = 1;
+        pattern = 903;
+      }
+      travel_1_buff = travel_1;
+      travel_2_buff = travel_2;
       if( lcd_pattern > 10 && lcd_pattern < 20 && lcd_back > 2000 ) {
         M5.Lcd.fillRect(0, 29, 320, 211, BLACK);
         lcd_pattern = 10;
@@ -1039,6 +1223,11 @@ void lcdDisplay(void) {
       M5.Lcd.printf("Params");
       break;
 
+    case 51:
+      M5.Lcd.setCursor(60, 135);
+      M5.Lcd.printf("OTA Mode active");
+      break;
+    
 //Status    
     case 110:
       M5.Lcd.drawFastVLine(106, 30, 210, TFT_WHITE);
@@ -1451,8 +1640,9 @@ void readEncoder(void) {
 	for (index_t i = 0; i < delta1_buffer.size(); i++) {
 		delta_avg_1 += delta1_buffer[i];
 	}
-  velocity_1 = (float)delta_avg_1 / AVERATING_BUFFER_SIZE * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR * 36 / 10;
-  travel_1 = (float)total_count_1 * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR / 1000;
+  velocity_1 = (float)delta_avg_1 / AVERATING_BUFFER_SIZE * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR *DRIVER_ROLLER_COEFFICIENT* 36 / 10;
+  travel_1 = (float)total_count_1 * DRIVER_ROLLER_PERIMETER / DRIVER_ROLLER_PPR *DRIVER_ROLLER_COEFFICIENT/ 1000;
+
   pcnt_get_counter_value(PCNT_UNIT_1, &delta_count_2);
   pcnt_counter_clear(PCNT_UNIT_1);  
   total_count_2 += delta_count_2;
@@ -1462,6 +1652,27 @@ void readEncoder(void) {
 	for (index_t i = 0; i < delta2_buffer.size(); i++) {
 		delta_avg_2 += delta2_buffer[i];
 	}
-  velocity_2 = (float)delta_avg_2 / AVERATING_BUFFER_SIZE * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR * 36 / 10;
-  travel_2 = (float)total_count_2 * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR / 1000;
+  velocity_2 = (float)delta_avg_2 / AVERATING_BUFFER_SIZE * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR * IDLER_ROLLER_COEFFICIENT * 36 / 10;
+  travel_2 = (float)total_count_2 * IDLER_ROLLER_PERIMETER / IDLER_ROLLER_PPR*IDLER_ROLLER_COEFFICIENT / 1000;
+}
+
+//Get Time From NTP
+//------------------------------------------------------------------//
+void getTimeFromNTP(void){
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  while (!getLocalTime(&timeinfo)) {
+    delay(1000);
+  }
+}
+
+//Get Convert Time
+//------------------------------------------------------------------//
+void getTime(void){
+  getLocalTime(&timeinfo);
+  dateStr = (String)(timeinfo.tm_year + 1900)
+          + "/" + (String)(timeinfo.tm_mon + 1)
+          + "/" + (String)timeinfo.tm_mday;
+  timeStr = (String)timeinfo.tm_hour
+          + ":" + (String)timeinfo.tm_min
+          + ":" + (String)timeinfo.tm_sec;
 }
