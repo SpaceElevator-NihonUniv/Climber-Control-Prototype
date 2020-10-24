@@ -134,12 +134,12 @@ unsigned int emergency_flag_buff;
 
 // WiFi credentials.
 // Set password to "" for open networks.
-char ssid3[] = "Buffalo-G-9030";
-char pass3[] = "kdtedkktjkcpc";
+char ssid1[] = "Buffalo-G-9030";
+char pass1[] = "kdtedkktjkcpc";
 char ssid2[] = "X1Extreme-Hotspot";
 char pass2[] = "5]6C458w";
-char ssid1[] = "LUCKY 3460";
-char pass1[] = "6Fy98&74";
+char ssid3[] = "Buffalo-G-0CBA";
+char pass3[] = "hh4aexcxesasx";
 
 bool second_flag = false;
 bool third_flag = false;
@@ -267,9 +267,8 @@ void setup() {
       if( wifi_cnt > 8 ) {
         wifi_cnt = 0;
         third_flag = true;
-        break;
         while(WiFi.status() == WL_CONNECTED ){
-          //WiFi.disconnect();
+          WiFi.disconnect();
           delay(10);
         }
         break;
