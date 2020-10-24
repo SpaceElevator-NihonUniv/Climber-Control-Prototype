@@ -136,8 +136,8 @@ unsigned int emergency_flag_buff;
 // Set password to "" for open networks.
 char ssid1[] = "Buffalo-G-9030";
 char pass1[] = "kdtedkktjkcpc";
-char ssid2[] = "X1Extreme-Hotspot";
-char pass2[] = "5]6C458w";
+char ssid2[] = "Owl";
+char pass2[] = "1234567890";
 char ssid3[] = "Buffalo-G-0CBA";
 char pass3[] = "hh4aexcxesasx";
 
