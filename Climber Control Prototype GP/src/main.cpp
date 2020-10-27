@@ -111,6 +111,12 @@ uint16_t lcd_back = 0;
 uint8_t battery_persent;
 long current_time = 0;
 long current_time_buff = 0;
+int descend_velocity_err;
+int descend_torque_err;
+float velocity_Kp = 0.0666;
+unsigned int torque_Kp = 850;
+float descend_torque;
+float descend_angle;
 
 //Touch Sensor
 static const int touch_upPin = 12;
@@ -134,10 +140,10 @@ unsigned int emergency_flag_buff;
 
 // WiFi credentials.
 // Set password to "" for open networks.
-char ssid1[] = "Buffalo-G-9030";
-char pass1[] = "kdtedkktjkcpc";
-char ssid2[] = "Owl";
-char pass2[] = "1234567890";
+char ssid2[] = "Buffalo-G-9030";
+char pass2[] = "kdtedkktjkcpc";
+char ssid1[] = "Owl";
+char pass1[] = "1234567890";
 char ssid3[] = "Buffalo-G-0CBA";
 char pass3[] = "hh4aexcxesasx";
 
@@ -186,6 +192,8 @@ float servo_torque = 0.0F;
 int servo_temp = 0;
 int servo_voltage_buff = 0;
 float servo_voltage = 0.00F;
+unsigned int servo_angle_open;
+unsigned int move_flag = true;
 
 // Paramenters
 unsigned int target_travel = 0;
@@ -193,7 +201,7 @@ unsigned int velocity_threshold = 0;
 char motor_output;
 unsigned int climb_height;
 unsigned int climb_velocity;
-unsigned int desend_velocity;
+unsigned int descend_velocity;
 unsigned int climber_accel;
 int starting_count;
 int stop_wait;
@@ -470,8 +478,15 @@ void loop() {
   case 61:
     power = 0;
     esc.write(power);
-    torque(1);
-    move(800, 0);
+    descend_velocity_err = descend_velocity - velocity_1;
+    descend_torque = descend_velocity_err * velocity_Kp + 0.1;
+    descend_torque_err = descend_torque - servo_torque;
+    descend_angle = descend_torque_err * torque_Kp ;
+    if( move_flag ) {
+      torque(1);
+      move(descend_angle, 0);
+      move_flag = false;
+    }    
     break;
 
   // Emergency stopPin
@@ -749,7 +764,7 @@ void xbee_re(void){
         re_pattern = 43;
         break;
       case 43:
-        desend_velocity = re_val;
+        descend_velocity = re_val;
         eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
@@ -788,12 +803,34 @@ void xbee_re(void){
         re_pattern = 0;
         break;
 
+      case 37:
+        se_pattern = 37;
+        re_pattern = 47;
+        break;
+      case 47:
+        velocity_Kp = re_val;
+        eeprom_write();
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 38:
+        se_pattern = 38;
+        re_pattern = 48;
+        break;
+      case 48:
+        servo_angle_open = re_val;
+        eeprom_write();
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
 
       case 221:
         if(re_val == 1){
           torque(1);
           delay(10);
-          move(800, 0);
+          move(servo_angle_open,0);
 
         }else{
           se_pattern = 1;
@@ -818,6 +855,10 @@ void xbee_re(void){
       } else if( xbee_re_buffer[xbee_index] ==  'O' ||  xbee_re_buffer[xbee_index] == 'o'){
         re_pattern  = 221;
         se_pattern  = 221;
+        Serial2.printf("\n");
+      } else if( xbee_re_buffer[xbee_index] ==  'A' ||  xbee_re_buffer[xbee_index] == 'a'){
+        pattern = 61;
+        se_pattern = 101;
         Serial2.printf("\n");
       } else if( xbee_re_buffer[xbee_index] ==  ' '){
         lcd_pattern = 0;
@@ -852,13 +893,14 @@ void xbee_se(void){
     Serial2.printf(" B  : brake On\n");
     Serial2.printf(" O  : brake Off\n");
     Serial2.printf("\n");
-    Serial2.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
-    Serial2.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
-    Serial2.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
-    Serial2.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
-    Serial2.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
-    Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
-    Serial2.printf("\n");
+    Serial2.printf(" 31 :  Climb Height         [%4d]\n",climb_height);
+    Serial2.printf(" 32 :  Climb Velocity       [%4d]\n",climb_velocity);
+    Serial2.printf(" 33 :  Descend Velocity     [%4d]\n",descend_velocity);
+    Serial2.printf(" 34 :  Climber Accel        [%4d]\n",climber_accel);
+    Serial2.printf(" 35 :  Starting Count       [%4d]\n",starting_count);
+    Serial2.printf(" 36 :  Stop Wait            [%4d]\n",stop_wait);
+    Serial2.printf(" 37 :  Servo Angle Open     [%4d]\n",servo_angle_open);
+    Serial2.printf(" 38 :  Descend Velocity     [%4d]\n",descend_velocity);
     Serial2.printf(" T : Terementry\n");
     Serial2.printf(" U : Manual  Climb\n");
     Serial2.printf(" D : Manual  Desvent\n");
@@ -876,12 +918,14 @@ void xbee_se(void){
   case 11:
     Serial2.printf("\n Check Current Paramenters\n");
     Serial2.printf("\n");
-    Serial2.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
-    Serial2.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
-    Serial2.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
-    Serial2.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
-    Serial2.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
-    Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
+    Serial2.printf(" 31 :  Climb Height         [%4d]\n",climb_height);
+    Serial2.printf(" 32 :  Climb Velocity       [%4d]\n",climb_velocity);
+    Serial2.printf(" 33 :  Descend Velocity      [%4d]\n",descend_velocity);
+    Serial2.printf(" 34 :  Climber Accel        [%4d]\n",climber_accel);
+    Serial2.printf(" 35 :  Starting Count       [%4d]\n",starting_count);
+    Serial2.printf(" 36 :  Stop Wait            [%4d]\n",stop_wait);
+    Serial2.printf(" 37 :  Servo Angle Open     [%4d]\n",servo_angle_open);
+    Serial2.printf(" 38 :  Descend Velocity     [%4d]\n",descend_velocity);
     Serial2.printf("\n");
     Serial2.printf(" Confilm to Climb? ->  ");
     se_pattern = 2;
@@ -900,7 +944,7 @@ void xbee_se(void){
       break;
 
   case 33:
-      Serial2.printf(" Desend Velocity [%4d]\n ",desend_velocity);
+      Serial2.printf(" Descend Velocity [%4d]\n ",descend_velocity);
       Serial2.printf(" Please enter 0 to 50 -> ");
       se_pattern = 2;
       break;
@@ -923,37 +967,18 @@ void xbee_se(void){
       se_pattern = 2;
       break;
 
+  case 37:
+      Serial2.printf(" Servo Angle Open    [%4d]\n",servo_angle_open);
+      Serial2.printf(" Please enter 0 to 800 -> ");
+      se_pattern = 2;
+
+  case 38:
+      Serial2.printf(" Descend Velocity    [%4d]\n",descend_velocity);
+      Serial2.printf(" Please enter 0 to 100 -> ");
+      se_pattern = 2;
+
   //Telementry Mode
   case 101:
-    break;
-
-  //Manual Control Mode
-  case 201:
-    Serial2.printf("\n Check Current Paramenters\n");
-    Serial2.printf("\n");
-    Serial2.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
-    Serial2.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
-    Serial2.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
-    Serial2.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
-    Serial2.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
-    Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
-    Serial2.printf("\n");
-    Serial2.printf(" Confilm to Climb? ->  ");
-    se_pattern = 2;
-    break;
-
-  case 211:
-    Serial2.printf("\n Check Current Paramenters\n");
-    Serial2.printf("\n");
-    Serial2.printf(" 31 :  Climb Height       [%4d]\n",climb_height);
-    Serial2.printf(" 32 :  Climb Velocity     [%4d]\n",climb_velocity);
-    Serial2.printf(" 33 :  Desend Velocity    [%4d]\n",desend_velocity);
-    Serial2.printf(" 34 :  Climber Accel      [%4d]\n",climber_accel);
-    Serial2.printf(" 35 :  Starting Count     [%4d]\n",starting_count);
-    Serial2.printf(" 36 :  Stop Wait          [%4d]\n",stop_wait);
-    Serial2.printf("\n");
-    Serial2.printf(" Confilm to Climb? ->  ");
-    se_pattern = 2;
     break;
 
   case 221:
@@ -1019,6 +1044,7 @@ void move(int sPos, int sTime) {
   Serial.write(sendbuf, 12); 
   delayMicroseconds(1200);
   digitalWrite(txden,LOW);
+  move_flag = true;
 }
 
 // RS405CB torque
@@ -1411,7 +1437,7 @@ void lcdDisplay(void) {
       M5.Lcd.setCursor(20, 80);
       M5.Lcd.printf("climb_velocity: %4d", climb_velocity); 
       M5.Lcd.setCursor(20, 110);
-      M5.Lcd.printf("desend_velocity: %4d", desend_velocity); 
+      M5.Lcd.printf("descend_velocity: %4d", descend_velocity); 
       M5.Lcd.setCursor(20, 140);
       M5.Lcd.printf("climber_accel: %4d", climber_accel); 
       M5.Lcd.setCursor(20, 170);
@@ -1510,16 +1536,20 @@ void eeprom_write(void){
     EEPROM.write(5,  (climb_velocity>>8 & 0xFF));
     EEPROM.write(6,  (climb_velocity>>16 & 0xFF));
     EEPROM.write(7,  (climb_velocity>>24 & 0xFF));
-    EEPROM.write(8,  (desend_velocity & 0xFF));
-    EEPROM.write(9,  (desend_velocity>>8 & 0xFF));
-    EEPROM.write(10, (desend_velocity>>16 & 0xFF));
-    EEPROM.write(11, (desend_velocity>>24 & 0xFF));
+    EEPROM.write(8,  (descend_velocity & 0xFF));
+    EEPROM.write(9,  (descend_velocity>>8 & 0xFF));
+    EEPROM.write(10, (descend_velocity>>16 & 0xFF));
+    EEPROM.write(11, (descend_velocity>>24 & 0xFF));
     EEPROM.write(12, (climber_accel & 0xFF));
     EEPROM.write(13, (climber_accel>>8 & 0xFF));
     EEPROM.write(14, (climber_accel>>16 & 0xFF));
     EEPROM.write(15, (climber_accel>>24 & 0xFF));
     EEPROM.write(16, starting_count);
     EEPROM.write(17, stop_wait);
+    EEPROM.write(18, (servo_angle_open & 0xFF));
+    EEPROM.write(19, (servo_angle_open>>8 & 0xFF));
+    EEPROM.write(20, (servo_angle_open>>16 & 0xFF));
+    EEPROM.write(21, (servo_angle_open>>24 & 0xFF));
     delay(10);
     EEPROM.commit();
     delay(10);
@@ -1530,10 +1560,11 @@ void eeprom_write(void){
 void eeprom_read(void){
     climb_height = EEPROM.read(0) + (EEPROM.read(1)<<8) + (EEPROM.read(2)<<16) + (EEPROM.read(3)<<24);
     climb_velocity = EEPROM.read(4) + (EEPROM.read(5)<<8) + (EEPROM.read(6)<<16) + (EEPROM.read(7)<<24);
-    desend_velocity = EEPROM.read(8) + (EEPROM.read(9)<<8) + (EEPROM.read(10)<<16) + (EEPROM.read(11)<<24);
+    descend_velocity = EEPROM.read(8) + (EEPROM.read(9)<<8) + (EEPROM.read(10)<<16) + (EEPROM.read(11)<<24);
     climber_accel = EEPROM.read(12) + (EEPROM.read(13)<<8) + (EEPROM.read(14)<<16) + (EEPROM.read(15)<<24);
     starting_count = EEPROM.read(16);
     stop_wait = EEPROM.read(17);
+    servo_angle_open = EEPROM.read(18) + (EEPROM.read(19)<<8) + (EEPROM.read(20)<<16) + (EEPROM.read(21)<<24);
     delay(10);
 }
 
