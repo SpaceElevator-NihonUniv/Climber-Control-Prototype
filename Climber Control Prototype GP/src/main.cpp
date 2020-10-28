@@ -53,6 +53,8 @@ CircularBuffer<int, AVERATING_BUFFER_SIZE> delta1_buffer;
 CircularBuffer<int, AVERATING_BUFFER_SIZE> delta2_buffer;
 CircularBuffer<int, 20> encoder1_status_buffer;
 CircularBuffer<int, 20> encoder2_status_buffer;
+CircularBuffer<int, 10> touch_up_buffer;
+CircularBuffer<int, 10> touch_down_buffer;
 
 // Timer
 hw_timer_t * timer = NULL;
@@ -66,6 +68,8 @@ int bufferRecords;
 int RecordType;
 int rp;
 int buffer;
+uint16_t touch_up_status_counter;
+uint16_t touch_down_status_counter;
 
 // Encoder1
 int16_t delta_count_1 = 0;                    // Delta Counter
@@ -117,14 +121,13 @@ float velocity_Kp = 0.0666;
 unsigned int torque_Kp = 850;
 float descend_torque;
 float descend_angle;
+unsigned int descend_velocity_threshold;
 
 //Touch Sensor
 static const int touch_upPin = 12;
 static const int touch_downPin = 5;
 bool touch_value_1 = false;
 bool touch_value_2 = false;
-unsigned int touch_flag_1_buff;
-unsigned int touch_flag_2_buff;
 
 //Timer Interrupt
 char  xbee_re_buffer[16];
@@ -193,13 +196,14 @@ int servo_temp = 0;
 int servo_voltage_buff = 0;
 float servo_voltage = 0.00F;
 unsigned int servo_angle_open;
-unsigned int move_flag = true;
+bool move_flag = true;
 
 // Paramenters
 unsigned int target_travel = 0;
 unsigned int velocity_threshold = 0;
 char motor_output;
 unsigned int climb_height;
+unsigned int descend_height;
 unsigned int climb_velocity;
 unsigned int descend_velocity;
 unsigned int climber_accel;
@@ -357,8 +361,6 @@ void setup() {
 
 
   // Initialize GPIO Interrupt
-  attachInterrupt(touch_upPin, touch_up, FALLING);
-  attachInterrupt(touch_downPin, touch_down, FALLING);
   attachInterrupt(emergency_stopPin, emergency_stop, FALLING);
 
   // Initialize IIC
@@ -462,7 +464,7 @@ void loop() {
   case 41:
     power = 0;   
     esc.write(power);                          
-    if( velocity_1 < BRAKE_THRESHOLD_VELOCITY /*|| velocity_2 < BRAKE_THRESHOLD_VELOCITY */) {
+    if( velocity_1 < BRAKE_THRESHOLD_VELOCITY || velocity_2 < BRAKE_THRESHOLD_VELOCITY ) {
       time_buff = millis();
       pattern = 51;
       break;
@@ -478,7 +480,24 @@ void loop() {
   case 61:
     power = 0;
     esc.write(power);
-    descend_velocity_err = descend_velocity - velocity_1;
+    if( move_flag && (velocity_1 <= descend_velocity*(-1) || velocity_2 <= descend_velocity*(-1) )){
+      move_flag = false;
+      torque(0);
+      move(-40, 0);
+    } else if ( move_flag && (velocity_1 > descend_velocity*(-1) - 0.5 || velocity_2 > descend_velocity*(-1) - 0.5 )){
+      move_flag = false;
+      torque(1);
+      move(servo_angle_open, 0);
+    }
+    /*if( travel_1 <= descend_height || travel_2 <= descend_height ){
+      torque(0);
+      move(-40, 0);
+    }*/
+    break;
+
+    
+  
+    /*descend_velocity_err = descend_velocity - velocity_1;
     descend_torque = descend_velocity_err * velocity_Kp + 0.1;
     descend_torque_err = descend_torque - servo_torque;
     descend_angle = descend_torque_err * torque_Kp ;
@@ -486,8 +505,8 @@ void loop() {
       torque(1);
       move(descend_angle, 0);
       move_flag = false;
-    }    
-    break;
+    }*/  
+    
 
   // Emergency stopPin
   case 900:
@@ -522,7 +541,6 @@ void loop() {
     esc.write(power);
     torque(0);
     move(-40, 0);
-    
     break;
   }
 
@@ -543,22 +561,44 @@ void timerInterrupt(void) {
 
     readEncoder();
     battery_persent = getBatteryGauge();
-    touch_value_1 = !digitalRead(touch_upPin);
-    touch_value_2 = !digitalRead(touch_downPin);
 
     emergency_value = !digitalRead(emergency_stopPin);
     if ( pattern == 900 && !emergency_value ) pattern = 0;
-    touch_value_1 = !digitalRead(touch_upPin);
-    if ( pattern == 901 && !emergency_value ) pattern = 0;
-    touch_value_2 = !digitalRead(touch_downPin);
-    if ( pattern == 902 && !emergency_value ) pattern = 0;
-
-
-    touch_flag_1_buff++;
-    touch_flag_2_buff++;
     emergency_flag_buff++;
 
-    lcd_back += 1;
+    touch_value_1 = digitalRead(touch_upPin);
+    touch_value_2 = digitalRead(touch_downPin);
+
+    if( touch_value_1 ) {
+      touch_up_buffer.push(1);
+    } else {
+      touch_up_buffer.push(0);
+    }
+    if( touch_value_2 ) {
+      touch_down_buffer.push(1);
+    } else {
+      touch_down_buffer.push(0);
+    }
+
+    touch_up_status_counter = 0;
+    using index_t = decltype(touch_up_buffer)::index_t;
+    for (index_t i = 0; i < touch_up_buffer.size(); i++) {
+      touch_up_status_counter += touch_up_buffer[i];
+    }
+    if( touch_up_status_counter > 5 ) {
+      //se_pattern = 1;
+      pattern = 901;
+    }
+    touch_down_status_counter = 0;
+    using index_t = decltype(touch_down_buffer)::index_t;
+    for (index_t i = 0; i < touch_down_buffer.size(); i++) {
+      touch_down_status_counter += touch_down_buffer[i];
+    }
+    if( touch_down_status_counter > 5 ) {
+      //se_pattern = 1;
+      pattern = 902;
+    }
+
     iTimer10++;
     //10ms timerInterrupt
     switch(iTimer10){
@@ -602,6 +642,7 @@ void timerInterrupt(void) {
          velocity_threshold++;
         }
       }  
+      
      break;
 
     case 20:
@@ -808,7 +849,7 @@ void xbee_re(void){
         re_pattern = 47;
         break;
       case 47:
-        velocity_Kp = re_val;
+        servo_angle_open = re_val;
         eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
@@ -819,7 +860,18 @@ void xbee_re(void){
         re_pattern = 48;
         break;
       case 48:
-        servo_angle_open = re_val;
+        descend_velocity = re_val;
+        eeprom_write();
+        se_pattern = 1;
+        re_pattern = 0;
+        break;
+
+      case 39:
+        se_pattern = 39;
+        re_pattern = 49;
+        break;
+      case 49:
+        descend_height = re_val;
         eeprom_write();
         se_pattern = 1;
         re_pattern = 0;
@@ -901,6 +953,7 @@ void xbee_se(void){
     Serial2.printf(" 36 :  Stop Wait            [%4d]\n",stop_wait);
     Serial2.printf(" 37 :  Servo Angle Open     [%4d]\n",servo_angle_open);
     Serial2.printf(" 38 :  Descend Velocity     [%4d]\n",descend_velocity);
+    Serial2.printf(" 39 :  Descend Height       [%4d]\n",descend_height);
     Serial2.printf(" T : Terementry\n");
     Serial2.printf(" U : Manual  Climb\n");
     Serial2.printf(" D : Manual  Desvent\n");
@@ -926,6 +979,7 @@ void xbee_se(void){
     Serial2.printf(" 36 :  Stop Wait            [%4d]\n",stop_wait);
     Serial2.printf(" 37 :  Servo Angle Open     [%4d]\n",servo_angle_open);
     Serial2.printf(" 38 :  Descend Velocity     [%4d]\n",descend_velocity);
+    Serial2.printf(" 39 :  Descend Height       [%4d]\n",descend_height);
     Serial2.printf("\n");
     Serial2.printf(" Confilm to Climb? ->  ");
     se_pattern = 2;
@@ -977,6 +1031,11 @@ void xbee_se(void){
       Serial2.printf(" Please enter 0 to 100 -> ");
       se_pattern = 2;
 
+  case 39:
+      Serial2.printf(" Descend Height    [%4d]\n",descend_height);
+      Serial2.printf(" Please enter 0 to 1000 -> ");
+      se_pattern = 2;
+
   //Telementry Mode
   case 101:
     break;
@@ -988,22 +1047,6 @@ void xbee_se(void){
   }
 }
 
-//Touch_Sensor
-//------------------------------------------------------------------//
-void touch_up(void){
-  if( touch_flag_1_buff > 500 ){
-    Serial2.printf(" detection obstacle above \n");
-    touch_flag_1_buff = 0;
-    pattern = 901;
-  }
-}
-void touch_down(void){
-  if( touch_flag_2_buff > 500 ){
-    Serial2.printf(" detection obstacle below \n");
-    touch_flag_2_buff = 0;
-    pattern = 902;
-  }
-}
 
 //emergency_Stop
 //------------------------------------------------------------------//
