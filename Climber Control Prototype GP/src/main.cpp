@@ -140,6 +140,11 @@ int sleep_flag;
 int emergency_stopPin = 35;
 volatile bool emergency_value = false;
 unsigned int emergency_flag_buff;
+bool touch_up_toggle_flag = false;
+bool touch_down_toggle_flag = false;
+bool servo_tx_flag = false;
+bool torque_tx_flag = false;
+bool servo_rx_flag = false;
 
 // WiFi credentials.
 // Set password to "" for open networks.
@@ -205,7 +210,7 @@ char motor_output;
 unsigned int climb_height;
 unsigned int descend_height;
 unsigned int climb_velocity;
-unsigned int descend_velocity;
+int descend_velocity;
 unsigned int climber_accel;
 int starting_count;
 int stop_wait;
@@ -480,20 +485,78 @@ void loop() {
   case 61:
     power = 0;
     esc.write(power);
-    if( move_flag && (velocity_1 <= descend_velocity*(-1) || velocity_2 <= descend_velocity*(-1) )){
-      move_flag = false;
+    if(velocity_1 <= descend_velocity*(-1) || velocity_2 <= descend_velocity*(-1) ){
+      time_buff = millis();
+      torque(1);
+      pattern = 62;
+    }
+    break;
+
+  case 62:
+    if( millis() - time_buff > 10 ) {
+      time_buff = millis();
+      move(-40,0);
+      pattern = 63;
+      break;
+    }
+    break;
+    
+  case 63:
+    if( millis() - time_buff > 10 ) {
+      time_buff = millis();
       torque(0);
-      move(-40, 0);
-    } else if ( move_flag && (velocity_1 > descend_velocity*(-1) - 0.5 || velocity_2 > descend_velocity*(-1) - 0.5 )){
+      pattern = 64;
+      break;
+    }
+    break;
+
+  case 64:
+    if( millis() - time_buff > 10 ) {
+      time_buff = millis();
+      pattern = 71;
+      break;
+    }
+    break;
+
+  case 71:
+    power = 0;
+    esc.write(power);
+    if( velocity_1 > -1 || velocity_2 > -1 ){
       move_flag = false;
       torque(1);
-      move(servo_angle_open, 0);
+      time_buff = millis();
+      pattern = 72;
+      break;
     }
-    /*if( travel_1 <= descend_height || travel_2 <= descend_height ){
-      torque(0);
-      move(-40, 0);
-    }*/
     break;
+
+  case 72:
+    if( millis() - time_buff > 10 ) {
+      move(servo_angle_open, 50);
+      time_buff = millis();
+      pattern = 73;
+      break;
+    }
+    break;
+
+  case 73:
+    if(millis() - time_buff > 600) {
+      if( servo_angle < 60 ) {
+        pattern = 61;
+        break;
+      } else {
+        time_buff = millis();
+        pattern = 72;
+      }
+    }
+    break;
+
+  case 81:
+  /*
+    if( travel_1 <= descend_height || travel_2 <= descend_height ){
+      torque(0);
+      pattern = 0;
+      break;
 
     
   
@@ -513,34 +576,24 @@ void loop() {
     lcdDisplay();
     power = 0;
     esc.write(power);
-    torque(0);
-    move(-40, 0);
     break;
 
   // Emergency touch_upPin
   case 901:
     power = 0;
     esc.write(power);
-    torque(0);
-    move(-40, 0);
-    se_pattern = 1;
     break;
 
   // Emergency touch_downPin
   case 902:
     power = 0;
     esc.write(power);
-    torque(0);
-    move(-40, 0);
-    se_pattern = 1;
     break;
 
   // Emergency Encoder
   case 903:
     power = 0;
     esc.write(power);
-    torque(0);
-    move(-40, 0);
     break;
   }
 
@@ -585,18 +638,26 @@ void timerInterrupt(void) {
     for (index_t i = 0; i < touch_up_buffer.size(); i++) {
       touch_up_status_counter += touch_up_buffer[i];
     }
-    if( touch_up_status_counter > 5 ) {
-      //se_pattern = 1;
+    if( touch_up_status_counter > 5 && !touch_up_toggle_flag ) {
+      touch_up_toggle_flag = true;
+      se_pattern = 1;
+      torque(0);
       pattern = 901;
+    } else if(touch_up_status_counter == 0){
+      touch_up_toggle_flag = false;
     }
     touch_down_status_counter = 0;
     using index_t = decltype(touch_down_buffer)::index_t;
     for (index_t i = 0; i < touch_down_buffer.size(); i++) {
       touch_down_status_counter += touch_down_buffer[i];
     }
-    if( touch_down_status_counter > 5 ) {
-      //se_pattern = 1;
+    if( touch_down_status_counter > 5 && !touch_down_toggle_flag ) {
+      touch_down_toggle_flag = true;
+      se_pattern = 1;
+      torque(0);
       pattern = 902;
+    } else if(touch_down_status_counter == 0){
+      touch_down_toggle_flag = false;
     }
 
     iTimer10++;
@@ -654,7 +715,7 @@ void timerInterrupt(void) {
         Serial2.printf("%5.2f, ",velocity_1);
         Serial2.printf("%5.2f, ",travel_2);
         Serial2.printf("%5.2f, ",velocity_2);
-        Serial2.printf("%5d, "  ,rssi_value);
+        Serial2.printf("%5d, "  ,touch_up_status_counter);
         Serial2.printf("%5.1f, "  ,servo_angle);
         Serial2.printf("%5.3f, "  ,servo_torque);
         Serial2.printf("%5d, "  ,servo_temp);
@@ -686,11 +747,11 @@ void timerInterrupt(void) {
      break;
     
     case 40:   
-      getServoStatus();   
+      getServoStatus(); 
       break;
 
     case 50:
-      
+      move_flag = true;
       if( travel_1 == travel_1_buff ){
         encoder1_status_buffer.push(0);
       } else {
@@ -708,6 +769,7 @@ void timerInterrupt(void) {
       }
       if( encoder1_status_counter <= 5 && pattern >= 21 && pattern <= 41 ) {
         se_pattern = 1;
+        torque(0);
         pattern = 903;
       }
       encoder2_status_counter = 0;
@@ -717,6 +779,7 @@ void timerInterrupt(void) {
       }
       if( encoder2_status_counter <= 5 && pattern >= 21 && pattern <= 41 ) {
         se_pattern = 1;
+        torque(0);
         pattern = 903;
       }
       travel_1_buff = travel_1;
@@ -909,6 +972,9 @@ void xbee_re(void){
         se_pattern  = 221;
         Serial2.printf("\n");
       } else if( xbee_re_buffer[xbee_index] ==  'A' ||  xbee_re_buffer[xbee_index] == 'a'){
+        torque(1);
+        delay(10);
+        move(servo_angle_open, 0);
         pattern = 61;
         se_pattern = 101;
         Serial2.printf("\n");
@@ -1054,6 +1120,7 @@ void emergency_stop(void){
   if( emergency_flag_buff > 500 ){
     Serial2.printf(" detection emergency \n");
     emergency_flag_buff = 0;
+    torque(0);
     pattern = 900;
   }
 }
@@ -1062,6 +1129,8 @@ void emergency_stop(void){
 //------------------------------------------------------------------//
 void move(int sPos, int sTime) {
   unsigned char sum;
+  while(servo_rx_flag);
+  servo_tx_flag = true;
 
   sendbuf[0] = (unsigned char) 0xFA;  // Hdr1
   sendbuf[1] = (unsigned char) 0xAF;  // Hdr2
@@ -1087,13 +1156,16 @@ void move(int sPos, int sTime) {
   Serial.write(sendbuf, 12); 
   delayMicroseconds(1200);
   digitalWrite(txden,LOW);
-  move_flag = true;
+  
+  servo_tx_flag = false;
 }
 
 // RS405CB torque
 //------------------------------------------------------------------//
 void torque(int sMode) {
   unsigned char sum;
+  while(servo_rx_flag);
+  torque_tx_flag = true;
 
   sendbuf[0] = (unsigned char) (0xFA);  // Hdr1
   sendbuf[1] = (unsigned char) (0xAF);  // Hdr2
@@ -1116,46 +1188,55 @@ void torque(int sMode) {
   Serial.write(sendbuf, 9);
   delayMicroseconds(1000);
   digitalWrite(txden, LOW);
+
+  torque_tx_flag = false;
 }
 
 // RS405CB Status
 //------------------------------------------------------------------//
 void getServoStatus(void) {
   unsigned char sum;
+  if(!servo_tx_flag) {
+    servo_rx_flag = true;
 
-  sendbuf[0] = (unsigned char) 0xFA;  //
-  sendbuf[1] = (unsigned char) 0xAF;  //
-  sendbuf[2] = (unsigned char) 1;     //
-  sendbuf[3] = (unsigned char) 0x09;  //
-  sendbuf[4] = (unsigned char) 0x00;  //
-  sendbuf[5] = (unsigned char) 0x00;  //
-  sendbuf[6] = (unsigned char) 0x01;  //
+    sendbuf[0] = (unsigned char) 0xFA;  //
+    sendbuf[1] = (unsigned char) 0xAF;  //
+    sendbuf[2] = (unsigned char) 1;     //
+    sendbuf[3] = (unsigned char) 0x09;  //
+    sendbuf[4] = (unsigned char) 0x00;  //
+    sendbuf[5] = (unsigned char) 0x00;  //
+    sendbuf[6] = (unsigned char) 0x01;  //
 
-  sum = sendbuf[2];
-  for (int i = 3; i < 7; i++) {
-    sum = (unsigned char) (sum ^ sendbuf[i]);
+    sum = sendbuf[2];
+    for (int i = 3; i < 7; i++) {
+      sum = (unsigned char) (sum ^ sendbuf[i]);
+    }
+    sendbuf[7] = sum;
+
+    digitalWrite(txden, HIGH);
+    Serial.write(sendbuf, 8);
+    delayMicroseconds(750);
+    digitalWrite(txden, LOW);
+    for(int i=0;i<26;i++) {
+      readbuf[i] = Serial.read();
+    }
+    servo_angle_buff = ((readbuf[8] << 8) & 0x0000FF00) | (readbuf[7] & 0x000000FF);
+    servo_torque_buff = ((readbuf[14] << 8) & 0x0000FF00) | (readbuf[13] & 0x000000FF);
+    servo_temp = ((readbuf[16] << 8) & 0x0000FF00) | (readbuf[15] & 0x000000FF );
+    servo_voltage_buff = ((readbuf[18] << 8) & 0x0000FF00) | (readbuf[17] & 0x000000FF);
+
+
+    if(servo_angle_buff < 32768) {
+      servo_angle = servo_angle_buff / 10;
+    } else {
+      servo_angle = (servo_angle_buff - 65535) / 10;
+    }
+    servo_torque = (float)servo_torque_buff / 1000;
+    servo_voltage = (float) servo_voltage_buff / 100;
+
+    servo_rx_flag = false;
+
   }
-  sendbuf[7] = sum;
-
-  digitalWrite(txden, HIGH);
-  Serial.write(sendbuf, 8);
-  delayMicroseconds(750);
-  digitalWrite(txden, LOW);
-  for(int i=0;i<26;i++) {
-    readbuf[i] = Serial.read();
-  }
-  servo_angle_buff = ((readbuf[8] << 8) & 0x0000FF00) | (readbuf[7] & 0x000000FF);
-  servo_torque_buff = ((readbuf[14] << 8) & 0x0000FF00) | (readbuf[13] & 0x000000FF);
-  servo_temp = ((readbuf[16] << 8) & 0x0000FF00) | (readbuf[15] & 0x000000FF);
-  servo_voltage_buff = ((readbuf[18] << 8) & 0x0000FF00) | (readbuf[17] & 0x000000FF);
-
-  if(servo_angle_buff < 32768) {
-    servo_angle = servo_angle_buff / 10;
-  } else {
-    servo_angle = (servo_angle_buff - 65535) / 10;
-  }
-  servo_torque = (float)servo_torque_buff / 1000;
-  servo_voltage = (float) servo_voltage_buff / 100;
   
 }
 
