@@ -122,6 +122,7 @@ unsigned int torque_Kp = 850;
 float descend_torque;
 float descend_angle;
 unsigned int descend_velocity_threshold;
+unsigned char brake_pattern = 11;
 
 //Touch Sensor
 static const int touch_upPin = 12;
@@ -246,6 +247,7 @@ void touch_down(void);
 void emergency_stop(void);
 void getTimeFromNTP(void);
 void getTime(void);
+void descendVelocityControl(int velocity);
 
 
 //Setup
@@ -485,70 +487,7 @@ void loop() {
   case 61:
     power = 0;
     esc.write(power);
-    if(velocity_1 <= descend_velocity*(-1) || velocity_2 <= descend_velocity*(-1) ){
-      time_buff = millis();
-      torque(1);
-      pattern = 62;
-    }
-    break;
-
-  case 62:
-    if( millis() - time_buff > 10 ) {
-      time_buff = millis();
-      move(-40,0);
-      pattern = 63;
-      break;
-    }
-    break;
-    
-  case 63:
-    if( millis() - time_buff > 10 ) {
-      time_buff = millis();
-      torque(0);
-      pattern = 64;
-      break;
-    }
-    break;
-
-  case 64:
-    if( millis() - time_buff > 10 ) {
-      time_buff = millis();
-      pattern = 71;
-      break;
-    }
-    break;
-
-  case 71:
-    power = 0;
-    esc.write(power);
-    if( velocity_1 > -1 || velocity_2 > -1 ){
-      move_flag = false;
-      torque(1);
-      time_buff = millis();
-      pattern = 72;
-      break;
-    }
-    break;
-
-  case 72:
-    if( millis() - time_buff > 10 ) {
-      move(servo_angle_open, 50);
-      time_buff = millis();
-      pattern = 73;
-      break;
-    }
-    break;
-
-  case 73:
-    if(millis() - time_buff > 600) {
-      if( servo_angle < 60 ) {
-        pattern = 61;
-        break;
-      } else {
-        time_buff = millis();
-        pattern = 72;
-      }
-    }
+    descendVelocityControl(descend_velocity);
     break;
 
   case 81:
@@ -747,7 +686,7 @@ void timerInterrupt(void) {
      break;
     
     case 40:   
-      getServoStatus(); 
+      if( pattern != 61 ) getServoStatus();       
       break;
 
     case 50:
@@ -1113,7 +1052,6 @@ void xbee_se(void){
   }
 }
 
-
 //emergency_Stop
 //------------------------------------------------------------------//
 void emergency_stop(void){
@@ -1238,6 +1176,78 @@ void getServoStatus(void) {
 
   }
   
+}
+
+// RS405CB Brake Speed Control
+//------------------------------------------------------------------//
+void descendVelocityControl(int velocity) { 
+
+  switch (brake_pattern) {
+  case 11:
+    if(velocity_1*-1 >= velocity || velocity_2*-1 >= velocity ){
+      time_buff = millis();
+      brake_pattern = 12;
+    }
+    break;
+
+  case 12:
+    if( millis() - time_buff > 10 ) {
+      time_buff = millis();
+      torque(0);
+      brake_pattern = 13;
+      break;
+    }
+    break;
+    
+  case 13:
+    if( millis() - time_buff > 10 ) {
+      time_buff = millis();
+      brake_pattern = 14;
+      break;
+    }
+    break;
+
+  case 14:
+    if( millis() - time_buff > 10 ) {
+      getServoStatus();
+      brake_pattern = 21;
+      break;
+    }
+    break;
+
+  case 21:
+    if( velocity_1*-1 < 1 || velocity_2*-1 < 1 ){
+      torque(1);
+      time_buff = millis();
+      brake_pattern = 22;
+      break;
+    }
+    break;
+
+  case 22:
+    if( millis() - time_buff > 10 ) {
+      move(servo_angle_open, 50);
+      time_buff = millis();
+      brake_pattern = 23;
+      break;
+    }
+    break;
+
+  case 23:
+    if(millis() - time_buff > 700) {
+      brake_pattern = 24;
+      break;
+    }
+    break;
+
+  case 24:
+    if(millis() - time_buff > 10) {
+      getServoStatus();
+      brake_pattern = 11;
+      break;
+    }
+    break;
+  }
 }
 
 // LCD Display
