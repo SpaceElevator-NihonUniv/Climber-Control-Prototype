@@ -8,8 +8,6 @@
 //This program supports the following boards:
 //* M5Stack(Grey version)
 
-#define M5STACK_MPU6886 
-
 //Include
 //------------------------------------------------------------------//
 #include <M5Stack.h>
@@ -171,25 +169,6 @@ struct tm timeinfo;
 String dateStr;
 String timeStr;
 
-// MPU
-float accX = 0.0F;
-float accY = 0.0F;
-float accZ = 0.0F;
-
-float gyroX = 0.0F;
-float gyroY = 0.0F;
-float gyroZ = 0.0F;
-
-float pitch = 0.0F;
-float roll  = 0.0F;
-float yaw   = 0.0F;
-
-float temp = 0.0F;
-
-float pitch_buff;
-float roll_buff;
-float yaw_buff;
-
 //RS405CB
 unsigned char sendbuf[32];
 unsigned char readbuf[32];
@@ -248,6 +227,8 @@ void emergency_stop(void);
 void getTimeFromNTP(void);
 void getTime(void);
 void descendVelocityControl(int velocity);
+void setCommunicationSpeed(void);
+void setFlashROM(void);
 
 
 //Setup
@@ -370,25 +351,22 @@ void setup() {
   // Initialize GPIO Interrupt
   attachInterrupt(emergency_stopPin, emergency_stop, FALLING);
 
-  // Initialize IIC
-  Wire.begin();
-  Wire.setClock(400000);
-
-  // Initialize MPU
-  //M5.IMU.Init();
-
   //Serial.begin(115200);
   // Servo Torque
   pinMode(txden, OUTPUT);  
   digitalWrite(txden, LOW);
   delay(1000);
 
+  Serial.begin(115200);
   Serial2.begin(115200);
   EEPROM.begin(128);
   delay(10);
   eeprom_read();
 
   
+  //setCommunicationSpeed();
+  //delay(500);
+  //setFlashROM();
 
 
   esc.attach(escPin, ESC_LDEC_CHANNEL, 0, 100, 900, 1940);
@@ -654,7 +632,7 @@ void timerInterrupt(void) {
         Serial2.printf("%5.2f, ",velocity_1);
         Serial2.printf("%5.2f, ",travel_2);
         Serial2.printf("%5.2f, ",velocity_2);
-        Serial2.printf("%5d, "  ,touch_up_status_counter);
+        Serial2.printf("%5d, "  ,brake_pattern);
         Serial2.printf("%5.1f, "  ,servo_angle);
         Serial2.printf("%5.3f, "  ,servo_torque);
         Serial2.printf("%5d, "  ,servo_temp);
@@ -1130,6 +1108,65 @@ void torque(int sMode) {
   torque_tx_flag = false;
 }
 
+
+void setCommunicationSpeed(void) {
+  unsigned char sum;
+  while(servo_rx_flag);
+  torque_tx_flag = true;
+
+  sendbuf[0] = (unsigned char) (0xFA);  // Hdr1
+  sendbuf[1] = (unsigned char) (0xAF);  // Hdr2
+  sendbuf[2] = (unsigned char) (1);   // ID
+  sendbuf[3] = (unsigned char) (0x00);  // Flag
+  sendbuf[4] = (unsigned char) (0x06);  // Addr(0x24=36)
+  sendbuf[5] = (unsigned char) (0x01);  // Length(1byte)
+  sendbuf[6] = (unsigned char) (0x01);  // Number
+  sendbuf[7] = (unsigned char) (0x07); // ON/OFFフラグ
+
+  // Caluculate check SUM
+  sum = sendbuf[2];
+  for (int i = 3; i < 8; i++) {
+    sum = (unsigned char) (sum ^ sendbuf[i]);
+  }
+  sendbuf[8] = sum;
+
+  // Transmit
+  digitalWrite(txden, HIGH);
+  Serial.write(sendbuf, 9);
+  delayMicroseconds(1000);
+  digitalWrite(txden, LOW);
+
+  torque_tx_flag = false;
+}
+
+void setFlashROM(void) {
+  unsigned char sum;
+  while(servo_rx_flag);
+  torque_tx_flag = true;
+
+  sendbuf[0] = (unsigned char) (0xFA);  // Hdr1
+  sendbuf[1] = (unsigned char) (0xAF);  // Hdr2
+  sendbuf[2] = (unsigned char) (1);   // ID
+  sendbuf[3] = (unsigned char) (0x40);  // Flag
+  sendbuf[4] = (unsigned char) (0xFF);  // Addr(0x24=36)
+  sendbuf[5] = (unsigned char) (0x00);  // Length(1byte)
+  sendbuf[6] = (unsigned char) (0x00);  // Number
+
+  // Caluculate check SUM
+  sum = sendbuf[2];
+  for (int i = 3; i < 8; i++) {
+    sum = (unsigned char) (sum ^ sendbuf[i]);
+  }
+  sendbuf[7] = 0xBE;
+
+  // Transmit
+  digitalWrite(txden, HIGH);
+  Serial.write(sendbuf, 8);
+  delayMicroseconds(1000);
+  digitalWrite(txden, LOW);
+
+  torque_tx_flag = false;
+}
 // RS405CB Status
 //------------------------------------------------------------------//
 void getServoStatus(void) {
@@ -1154,6 +1191,7 @@ void getServoStatus(void) {
     digitalWrite(txden, HIGH);
     Serial.write(sendbuf, 8);
     delayMicroseconds(750);
+
     digitalWrite(txden, LOW);
     for(int i=0;i<26;i++) {
       readbuf[i] = Serial.read();
